@@ -13,11 +13,14 @@
 html,
 body {
   height: 100%;
+  --blue: #3777ff;
+  --dark: #181a21;
 }
 body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
-  font-family: 'Lato', sans-serif;
+  font-family: "Lato", sans-serif;
+  color: var(--dark);
 }
 img,
 picture,
@@ -45,4 +48,30 @@ h6 {
 #root,
 #__next {
   isolation: isolate;
+}
+
+@font-face {
+  font-family: "Sunset Demi";
+  src: url("/static/fonts/Sunset-Demi.woff") format("woff");
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Apercu Regular Pro";
+  src:
+    url("/static/fonts/apercu-regular-pro.woff") format("woff"),
+    url("/static/fonts/apercu-regular-pro.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Apercu Italic Pro";
+  src:
+    url("/static/fonts/apercu-italic-pro.woff") format("woff"),
+    url("/static/fonts/apercu-italic-pro.woff2") format("woff2"),
+    url("/static/fonts/apercu-italic-pro.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
 }

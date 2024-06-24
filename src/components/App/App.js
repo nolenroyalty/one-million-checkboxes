@@ -261,6 +261,7 @@ const App = () => {
 const Heading = styled.div`
   display: grid;
   justify-content: space-between;
+
   align-items: baseline;
   width: var(--width);
   margin: 10px auto 0;
@@ -271,7 +272,7 @@ const Heading = styled.div`
     ". sub .";
 
   padding-bottom: 10px;
-  border-bottom: 2px solid black;
+  border-bottom: 2px solid var(--dark);
 
   @media (max-width: 850px) {
     grid-template-columns: 1fr auto auto 1fr;
@@ -289,7 +290,7 @@ const JumpInput = styled.input`
   height: 40px;
   font-size: 1rem;
   width: 160px;
-  border: 2px solid #007bff;
+  border: 2px solid var(--blue);
   border-radius: 0;
 `;
 
@@ -298,7 +299,7 @@ const JumpButton = styled.button`
   padding: 8px;
   height: 40px;
   font-size: 1rem;
-  background-color: #007bff;
+  background-color: var(--blue);
   border: none;
   color: white;
   cursor: pointer;
@@ -309,6 +310,7 @@ const Title = styled.h1`
   margin: 0;
   padding: 8px 0 0 0;
   font-size: clamp(1.75rem, 2vw + 1rem, 2.5rem);
+  font-family: "Sunset Demi", serif;
   text-align: center;
   grid-area: title;
 `;
@@ -319,9 +321,20 @@ const SubHead = styled.h2`
   font-size: 1.5rem;
   flex: 1;
   font-size: clamp(1rem, 1vw + 1rem, 1.5rem);
+  font-family: "Apercu Regular Pro", sans-serif;
 
   & a {
-    color: blue;
+    color: var(--blue);
+    text-decoration: underline;
+    // dotted underline
+    text-decoration-style: dashed;
+    // move underline a little further down
+    text-underline-offset: 0.12em;
+    transition: color 0.3s;
+  }
+
+  & a:hover {
+    color: var(--dark);
   }
 `;
 
@@ -329,6 +342,7 @@ const Explanation = styled.p`
   font-size: 1rem;
   text-align: center;
   grid-area: sub;
+  font-family: "Apercu Italic Pro", sans-serif;
   // italicize
   font-style: italic;
 `;
