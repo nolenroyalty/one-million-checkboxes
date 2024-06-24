@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { FixedSizeGrid as Grid } from "react-window";
 import { useWindowSize } from "react-use";
-import styled from "styled-components";
+import styled, { keyframes } from "styled-components";
 import BitSet from "../../bitset";
 import io from "socket.io-client";
 
@@ -52,12 +52,25 @@ const MaybeColoredDiv = styled.div`
   border-radius: 2px;
 `;
 
+const fadeIn = keyframes`
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+`;
+
 const CheckboxWrapper = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
   width: ${CHECKBOX_SIZE}px;
   height: ${CHECKBOX_SIZE}px;
+  opacity: var(--opacity);
+  transition: opacity 0.5s;
+  animation: ${fadeIn} 0.4s;
 `;
 
 const App = () => {
@@ -152,7 +165,7 @@ const App = () => {
   );
 
   const Cell = React.useCallback(
-    ({ columnIndex, rowIndex, style }) => {
+    ({ columnIndex, rowIndex, style, isLoading }) => {
       const index = rowIndex * columnCount + columnIndex;
       if (index >= TOTAL_CHECKBOXES) return null;
 
@@ -212,7 +225,9 @@ const App = () => {
           a website by <a href="https://eieio.games">eieio</a>
         </SiteHead>
         <Title>One Million Checkboxes</Title>
-        <CountHead>{checkCount} boxes checked</CountHead>
+        <CountHead style={{ "--opacity": isLoading ? 0 : 1 }}>
+          {checkCount} boxes checked
+        </CountHead>
         <Explanation>(checking a box checks it for everyone!)</Explanation>
       </Heading>
       <form
@@ -249,7 +264,12 @@ const App = () => {
           ref={gridRef}
           overscanRowCount={OVERSCAN_COUNT}
           overscanColumnCount={OVERSCAN_COUNT}
-          style={{ width: "fit-content", margin: "0 auto" }}
+          style={{
+            width: "fit-content",
+            margin: "0 auto",
+            "--opacity": isLoading ? 0 : 1,
+            transition: "opacity 5.5s",
+          }}
         >
           {Cell}
         </Grid>
@@ -355,6 +375,8 @@ const SiteHead = styled(SubHead)`
 const CountHead = styled(SubHead)`
   text-align: right;
   grid-area: count;
+  opacity: var(--opacity);
+  transition: opacity 0.5s;
 `;
 
 const Wrapper = styled.div`
