@@ -1,0 +1,15 @@
+bidict==0.23.1
+blinker==1.8.2
+click==8.1.7
+Flask==3.0.3
+Flask-SocketIO==5.3.6
+h11==0.14.0
+itsdangerous==2.2.0
+Jinja2==3.1.4
+MarkupSafe==2.1.5
+python-engineio==4.9.1
+python-socketio==5.11.3
+redis==5.0.6
+simple-websocket==1.0.0
+Werkzeug==3.0.3
+wsproto==1.2.0
