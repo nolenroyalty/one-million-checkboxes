@@ -105,7 +105,7 @@ const App = () => {
     });
 
     // Listen for full state updates
-    socket.on("full_state_update", (data) => {
+    socket.on("full_state", (data) => {
       console.log(`Received full state update: ${JSON.stringify(data)}`);
     });
 

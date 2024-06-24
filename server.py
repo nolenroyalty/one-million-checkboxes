@@ -2,7 +2,8 @@ from flask import Flask, render_template, jsonify, request, send_from_directory,
 from flask_socketio import SocketIO
 from flask_cors import CORS
 import os
-import time
+from apscheduler.schedulers.background import BackgroundScheduler
+
 
 TOTAL_CHECKBOXES = 1_000_000
 REACT_BUILD_DIRECTORY = os.path.abspath(os.path.join(os.path.dirname(__file__), 'dist'))
@@ -10,6 +11,7 @@ REACT_BUILD_DIRECTORY = os.path.abspath(os.path.join(os.path.dirname(__file__), 
 app = Flask(__name__, static_folder=REACT_BUILD_DIRECTORY)
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
+scheduler = BackgroundScheduler()
 
 # Configuration
 USE_REDIS = os.environ.get('USE_REDIS', 'false').lower() == 'true'
@@ -97,10 +99,9 @@ def get_initial_state():
     state = create_rle_state()    
     return jsonify(state)
 
-def emit_full_state_periodically():
-    while True:
-        socketio.emit('full_state', create_rle_state())
-        time.sleep(30)
+def emit_full_state():
+    print("Emitting full state")
+    socketio.emit('full_state', create_rle_state())
 
 @app.route('/api/toggle/<int:index>', methods=['POST'])
 def toggle_bit(index):
@@ -131,6 +132,9 @@ def serve(path):
     else:
         return send_file(os.path.join(app.static_folder, 'index.html'))
     
+
+scheduler.add_job(emit_full_state, 'interval', seconds=30)
+scheduler.start()
 
 if __name__ == '__main__':
     set_bit(0, True)
