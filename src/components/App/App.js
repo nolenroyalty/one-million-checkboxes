@@ -3,6 +3,7 @@ import { FixedSizeGrid as Grid } from "react-window";
 import { useWindowSize } from "react-use";
 import styled from "styled-components";
 import BitSet from "../../bitset";
+import io from "socket.io-client";
 
 const TOTAL_CHECKBOXES = 1000000;
 const CHECKBOX_SIZE = 35; // Size of each checkbox (width and height)
@@ -70,12 +71,62 @@ const App = () => {
   const bitSetRef = useRef(new BitSet(TOTAL_CHECKBOXES));
   const [checkCount, setCheckCount] = React.useState(bitSetRef.current.count());
   const forceUpdate = useForceUpdate({ bitSetRef, setCheckCount });
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Set example data
-    [1, 15, 24].forEach((index) => bitSetRef.current.set(index - 1));
-    forceUpdate();
+    const fetchInitialState = async () => {
+      try {
+        const response = await fetch("/api/initial-state");
+        const data = await response.json();
+        setCheckCount(data.count);
+        data.setBits.forEach(([index, count]) => {
+          for (let i = 0; i < count; i++) {
+            bitSetRef.current.set(index + i);
+          }
+        });
+        setIsLoading(false);
+      } catch (error) {
+        console.error("Failed to fetch initial state:", error);
+        setIsLoading(false);
+      }
+    };
+
+    fetchInitialState();
+  }, []);
+
+  useEffect(() => {
+    const socket = io.connect();
+
+    // Listen for bit toggle events
+    socket.on("bit_toggled", (data) => {
+      console.log(`update: ${JSON.stringify(data)}`);
+      bitSetRef.current.makeThisValue(data.index, data.value);
+      forceUpdate();
+    });
+
+    // Listen for full state updates
+    socket.on("full_state_update", (data) => {
+      console.log(`Received full state update: ${JSON.stringify(data)}`);
+    });
+
+    // Clean up the socket connection when the component unmounts
+    return () => {
+      socket.disconnect();
+    };
   }, [forceUpdate]);
+
+  const toggleBit = useCallback(
+    async (index) => {
+      try {
+        bitSetRef.current.toggle(index);
+        forceUpdate();
+        fetch(`/api/toggle/${index}`, { method: "POST" });
+      } catch (error) {
+        console.error("Failed to toggle bit:", error);
+      }
+    },
+    [forceUpdate]
+  );
 
   const Cell = React.useCallback(
     ({ columnIndex, rowIndex, style }) => {
@@ -85,9 +136,7 @@ const App = () => {
       const isChecked = bitSetRef.current.get(index);
 
       const handleChange = () => {
-        bitSetRef.current.toggle(index);
-        forceUpdate();
-        // TODO: Implement server communication here
+        toggleBit(index);
       };
 
       return (
@@ -100,7 +149,7 @@ const App = () => {
         />
       );
     },
-    [columnCount, forceUpdate]
+    [columnCount, toggleBit]
   );
 
   const handleJumpToCheckbox = (e) => {
@@ -139,21 +188,25 @@ const App = () => {
         />
         <button type="submit">Jump to Checkbox</button>
       </form> */}
-      <Grid
-        className="grid"
-        width={gridWidth}
-        height={height} // Adjust for header and form
-        columnCount={columnCount}
-        columnWidth={CHECKBOX_SIZE}
-        rowCount={rowCount}
-        rowHeight={CHECKBOX_SIZE}
-        ref={gridRef}
-        overscanRowCount={OVERSCAN_COUNT}
-        overscanColumnCount={OVERSCAN_COUNT}
-        style={{ width: "fit-content", margin: "0 auto" }}
-      >
-        {Cell}
-      </Grid>
+      {isLoading ? (
+        <p>Loading...</p>
+      ) : (
+        <Grid
+          className="grid"
+          width={gridWidth}
+          height={height} // Adjust for header and form
+          columnCount={columnCount}
+          columnWidth={CHECKBOX_SIZE}
+          rowCount={rowCount}
+          rowHeight={CHECKBOX_SIZE}
+          ref={gridRef}
+          overscanRowCount={OVERSCAN_COUNT}
+          overscanColumnCount={OVERSCAN_COUNT}
+          style={{ width: "fit-content", margin: "0 auto" }}
+        >
+          {Cell}
+        </Grid>
+      )}
     </Wrapper>
   );
 };

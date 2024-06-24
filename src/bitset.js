@@ -8,15 +8,30 @@ class BitSet {
   set(index) {
     const arrayIndex = Math.floor(index / 32);
     const bitIndex = index % 32;
-    this.bits[arrayIndex] |= 1 << bitIndex;
-    this.checkCount++;
+    const current = this.bits[arrayIndex];
+    if ((current & (1 << bitIndex)) === 0) {
+      this.bits[arrayIndex] |= 1 << bitIndex;
+      this.checkCount++;
+    }
   }
 
   clear(index) {
     const arrayIndex = Math.floor(index / 32);
     const bitIndex = index % 32;
+    const current = this.bits[arrayIndex];
+    if ((current & (1 << bitIndex)) === 0) {
+      return;
+    }
     this.bits[arrayIndex] &= ~(1 << bitIndex);
     this.checkCount--;
+  }
+
+  makeThisValue(index, value) {
+    if (value) {
+      this.set(index);
+    } else {
+      this.clear(index);
+    }
   }
 
   get(index) {
