@@ -208,25 +208,33 @@ const App = () => {
   return (
     <Wrapper>
       <Heading style={{ "--width": columnCount * CHECKBOX_SIZE + "px" }}>
-        <SubHead>
-          a tiny website by <a href="https://eieio.games">eieio</a>
-        </SubHead>
+        <SiteHead>
+          a website by <a href="https://eieio.games">eieio</a>
+        </SiteHead>
         <Title>One Million Checkboxes</Title>
-        <SubHead style={{ textAlign: "right" }}>
-          {checkCount} checkboxes are checked
-        </SubHead>
+        <CountHead>{checkCount} boxes checked</CountHead>
+        <Explanation>(checking a box checks it for everyone!)</Explanation>
       </Heading>
-      {/* <form onSubmit={handleJumpToCheckbox} style={{ marginBottom: "10px" }}>
-        <input
+      <form
+        onSubmit={handleJumpToCheckbox}
+        style={{
+          position: "fixed",
+          right: "0",
+          bottom: "0",
+          zIndex: 1,
+          margin: "5px",
+        }}
+      >
+        <JumpInput
           type="number"
           value={jumpToIndex}
           onChange={(e) => setJumpToIndex(e.target.value)}
-          placeholder="Enter checkbox number"
+          placeholder="checkbox number"
           min="1"
           max={TOTAL_CHECKBOXES}
         />
-        <button type="submit">Jump to Checkbox</button>
-      </form> */}
+        <JumpButton type="submit">Jump!</JumpButton>
+      </form>
       {isLoading ? (
         <p>Loading...</p>
       ) : (
@@ -251,21 +259,58 @@ const App = () => {
 };
 
 const Heading = styled.div`
-  display: flex;
+  display: grid;
   justify-content: space-between;
   align-items: baseline;
   width: var(--width);
-  margin: 0 auto;
+  margin: 10px auto 0;
+  grid-template-columns: 1fr auto 1fr;
+  grid-template-rows: auto auto;
+  grid-template-areas:
+    "site title count"
+    ". sub .";
+
+  padding-bottom: 10px;
+  border-bottom: 2px solid black;
+
+  @media (max-width: 850px) {
+    grid-template-columns: 1fr auto auto 1fr;
+    grid-template-rows: auto auto auto;
+    grid-template-areas:
+      "title title title title"
+      ". sub sub ."
+      "site site count count";
+  }
 `;
 
-const Spacer = styled.div`
-  height: 20px;
-  flex: 1;
+const JumpInput = styled.input`
+  margin: 0;
+  padding: 8px;
+  height: 40px;
+  font-size: 1rem;
+  width: 160px;
+  border: 2px solid #007bff;
+  border-radius: 0;
+`;
+
+const JumpButton = styled.button`
+  margin: 0;
+  padding: 8px;
+  height: 40px;
+  font-size: 1rem;
+  background-color: #007bff;
+  border: none;
+  color: white;
+  cursor: pointer;
+  transition: background-color 0.3s;
 `;
 
 const Title = styled.h1`
   margin: 0;
   padding: 8px 0 0 0;
+  font-size: clamp(1.75rem, 2vw + 1rem, 2.5rem);
+  text-align: center;
+  grid-area: title;
 `;
 
 const SubHead = styled.h2`
@@ -273,6 +318,29 @@ const SubHead = styled.h2`
   padding: 4px 0 0 0;
   font-size: 1.5rem;
   flex: 1;
+  font-size: clamp(1rem, 1vw + 1rem, 1.5rem);
+
+  & a {
+    color: blue;
+  }
+`;
+
+const Explanation = styled.p`
+  font-size: 1rem;
+  text-align: center;
+  grid-area: sub;
+  // italicize
+  font-style: italic;
+`;
+
+const SiteHead = styled(SubHead)`
+  text-align: left;
+  grid-area: site;
+`;
+
+const CountHead = styled(SubHead)`
+  text-align: right;
+  grid-area: count;
 `;
 
 const Wrapper = styled.div`
