@@ -19,17 +19,29 @@ USE_REDIS = os.environ.get('USE_REDIS', 'false').lower() == 'true'
 if USE_REDIS:
     import redis
     redis_client = redis.Redis(host='localhost', port=6379, db=0)
+
+    # Lua script for atomic bit setting and count update
+    set_bit_script = """
+    local key = KEYS[1]
+    local index = tonumber(ARGV[1])
+    local value = tonumber(ARGV[2])
+    local current = redis.call('getbit', key, index)
+    local diff = value - current
+    redis.call('setbit', key, index, value)
+    redis.call('incrby', 'count', diff)
+    return diff"""
+    set_bit_sha = redis_client.script_load(set_bit_script)
 else:
     # In-memory storage
     in_memory_storage = {'bitset': bytearray(1000000 // 8), 'count': 0}
+    
 
 def _redis_get_bit(index):
     return bool(redis_client.getbit('bitset', index))
 
-
 def _redis_set_bit(index, value):
-    redis_client.setbit('bitset', index, value)
-    redis_client.set('count', int(redis_client.get('count') or 0) + (1 if value else -1))
+    diff = redis_client.evalsha(set_bit_sha, 1, 'bitset', index, int(value))
+    return diff != 0
 
 def _in_memory_get_bit(index):
     byte_index = index // 8
@@ -39,12 +51,16 @@ def _in_memory_get_bit(index):
 def _in_memory_set_bit(index, value):
     byte_index = index // 8
     bit_index = index % 8
-    if value:
-        in_memory_storage['bitset'][byte_index] |= (1 << bit_index)
-        in_memory_storage['count'] += 1
-    else:
-        in_memory_storage['bitset'][byte_index] &= ~(1 << bit_index)
-        in_memory_storage['count'] -= 1
+    current_value = (in_memory_storage['bitset'][byte_index] & (1 << bit_index)) != 0
+    if current_value != value:
+        if value:
+            in_memory_storage['bitset'][byte_index] |= (1 << bit_index)
+            in_memory_storage['count'] += 1
+        else:
+            in_memory_storage['bitset'][byte_index] &= ~(1 << bit_index)
+            in_memory_storage['count'] -= 1
+        return True
+    return False
 
 def get_bit(index):
     if USE_REDIS:
@@ -137,6 +153,8 @@ scheduler.add_job(emit_full_state, 'interval', seconds=5)
 scheduler.start()
 
 if __name__ == '__main__':
+    for x in range(100_000):
+        set_bit(x, True)
     set_bit(0, True)
     set_bit(1, True)
     set_bit(100, True)

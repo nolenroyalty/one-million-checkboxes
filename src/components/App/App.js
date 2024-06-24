@@ -226,7 +226,7 @@ const App = () => {
         </SiteHead>
         <Title>One Million Checkboxes</Title>
         <CountHead style={{ "--opacity": isLoading ? 0 : 1 }}>
-          {checkCount} boxes checked
+          {checkCount} checked
         </CountHead>
         <Explanation>(checking a box checks it for everyone!)</Explanation>
       </Heading>
@@ -338,9 +338,8 @@ const Title = styled.h1`
 const SubHead = styled.h2`
   margin: 0;
   padding: 4px 0 0 0;
-  font-size: 1.5rem;
   flex: 1;
-  font-size: clamp(1rem, 1vw + 1rem, 1.5rem);
+  font-size: clamp(1rem, 0.15vw + 1rem, 1.5rem);
   font-family: "Apercu Regular Pro", sans-serif;
 
   & a {
