@@ -133,7 +133,7 @@ def serve(path):
         return send_file(os.path.join(app.static_folder, 'index.html'))
     
 
-scheduler.add_job(emit_full_state, 'interval', seconds=30)
+scheduler.add_job(emit_full_state, 'interval', seconds=5)
 scheduler.start()
 
 if __name__ == '__main__':

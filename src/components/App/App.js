@@ -72,6 +72,7 @@ const App = () => {
   const [checkCount, setCheckCount] = React.useState(bitSetRef.current.count());
   const forceUpdate = useForceUpdate({ bitSetRef, setCheckCount });
   const [isLoading, setIsLoading] = useState(true);
+  const recentlyCheckedClientSide = useRef({});
 
   useEffect(() => {
     const fetchInitialState = async () => {
@@ -99,7 +100,6 @@ const App = () => {
 
     // Listen for bit toggle events
     socket.on("bit_toggled", (data) => {
-      console.log(`update: ${JSON.stringify(data)}`);
       bitSetRef.current.makeThisValue(data.index, data.value);
       forceUpdate();
     });
@@ -107,6 +107,29 @@ const App = () => {
     // Listen for full state updates
     socket.on("full_state", (data) => {
       console.log(`Received full state update: ${JSON.stringify(data)}`);
+      console.log(
+        `RECENTLY CHECKED: ${JSON.stringify(recentlyCheckedClientSide.current)}`
+      );
+      const newBitset = new BitSet(TOTAL_CHECKBOXES);
+      const recentlyChecked = { ...recentlyCheckedClientSide.current };
+      Object.entries(recentlyChecked).forEach(([index, { value, timeout }]) => {
+        newBitset.makeThisValue(index, value);
+      });
+      data.setBits.forEach(([startingIndex, count]) => {
+        for (let i = 0; i < count; i++) {
+          const index = startingIndex + i;
+          if (recentlyCheckedClientSide.current[index]) {
+            const { value, timeout } = recentlyCheckedClientSide.current[index];
+            console.log(`DROPPING UPDATE and using ${value} for ${index}`);
+          } else {
+            // console.log(`Setting ${index}`);
+            newBitset.set(index);
+          }
+        }
+      });
+      bitSetRef.current = newBitset;
+      setCheckCount(data.count);
+      forceUpdate();
     });
 
     // Clean up the socket connection when the component unmounts
@@ -137,6 +160,22 @@ const App = () => {
 
       const handleChange = () => {
         toggleBit(index);
+
+        const timeout = setTimeout(() => {
+          delete recentlyCheckedClientSide.current[index];
+        }, 1000);
+
+        if (recentlyCheckedClientSide.current[index]) {
+          clearTimeout(recentlyCheckedClientSide.current[index].timeout);
+        }
+
+        recentlyCheckedClientSide.current[index] = {
+          value: !isChecked,
+          timeout,
+        };
+        console.log(
+          `RECENTLY CHECKED: ${JSON.stringify(recentlyCheckedClientSide.current)}`
+        );
       };
 
       return (
