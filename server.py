@@ -1,3 +1,6 @@
+import eventlet
+eventlet.monkey_patch(thread=True, time=True)
+
 from flask import Flask, render_template, jsonify, request, send_from_directory, send_file
 from flask_socketio import SocketIO
 from flask_cors import CORS
@@ -142,7 +145,6 @@ def toggle_bit(index):
         count = in_memory_storage['count']
 
     socketio.emit('bit_toggled', {'index': index, 'value': new_value})
-    
     return jsonify({
         'index': index,
         'value': new_value,
@@ -169,5 +171,4 @@ if __name__ == '__main__':
     set_bit(1, True)
     set_bit(100, True)
     set_bit(101, True)
-    emit_state_updates()
-    socketio.run(app, port=5001)
+    socketio.run(app, host="0.0.0.0", port=5001)

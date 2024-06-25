@@ -4,6 +4,7 @@ import { useWindowSize } from "react-use";
 import styled, { keyframes } from "styled-components";
 import BitSet from "../../bitset";
 import io from "socket.io-client";
+import INDICES from "../../randomizedColors";
 
 const TOTAL_CHECKBOXES = 1000000;
 const CHECKBOX_SIZE = 35; // Size of each checkbox (width and height)
@@ -14,12 +15,15 @@ const useForceUpdate = ({ bitSetRef, setCheckCount }) => {
   return useCallback(() => {
     setTick((tick) => tick + 1);
     setCheckCount(bitSetRef.current.count());
-    console.log(`set check count to ${bitSetRef.current.count()}`);
   }, [bitSetRef, setCheckCount]);
 };
 
 const Checkbox = React.memo(({ index, style, isChecked, handleChange }) => {
-  const backgroundColor = index % 17 === 0 ? "hsla(47, 90%, 69%, 0.7)" : null;
+  // const backgroundColor = index % 17 === 0 ? "hsla(47, 90%, 69%, 0.7)" : null;
+  let backgroundColor = null;
+  if (INDICES[index]) {
+    backgroundColor = `var(--${INDICES[index]}`;
+  }
 
   return (
     <CheckboxWrapper style={style}>
@@ -36,12 +40,20 @@ const Checkbox = React.memo(({ index, style, isChecked, handleChange }) => {
   );
 });
 
+const isDesktopSafari = () => {
+  const ua = navigator.userAgent;
+  return /^((?!chrome|android).)*safari/i.test(ua) && !/mobile/i.test(ua);
+};
+
 const StyledCheckbox = styled.input`
   margin: 0;
   padding: 0;
   width: 25px;
   height: 25px;
   box-shadow: none;
+  /* transform: translate(10px, 10px); */
+
+  transform: ${isDesktopSafari() ? "translate(3px, 0px)" : "none"};
 `;
 
 const MaybeColoredDiv = styled.div`
@@ -122,9 +134,6 @@ const App = () => {
     // Listen for full state updates
     socket.on("full_state", (data) => {
       console.log(`Received full state update: ${JSON.stringify(data)}`);
-      console.log(
-        `RECENTLY CHECKED: ${JSON.stringify(recentlyCheckedClientSide.current)}`
-      );
       const newBitset = new BitSet(TOTAL_CHECKBOXES);
       const recentlyChecked = { ...recentlyCheckedClientSide.current };
       Object.entries(recentlyChecked).forEach(([index, { value, timeout }]) => {
@@ -143,8 +152,6 @@ const App = () => {
         }
       });
       bitSetRef.current = newBitset;
-      console.log(`New bitset count: ${newBitset.count()}`);
-      console.log(`data count: ${data.count}`);
       setCheckCount(data.count);
       forceUpdate();
     });
