@@ -97,14 +97,14 @@ const initialSelfCheckboxState = () => ({
 });
 
 const scoreString = (selfCheckboxState) => {
-  const colors = ["gold", "red", "green", "purple", "orange"];
+  const colors = ["gold", "red", "green", "purple"];
   const colorsToInclude = colors
     .map((color) => {
       const count =
         selfCheckboxState[
           `total${color.charAt(0).toUpperCase()}${color.slice(1)}`
         ];
-      if (count > 0) {
+      if (count !== 0) {
         return [color, count];
       }
       return null;

@@ -8,6 +8,7 @@ import os
 from apscheduler.schedulers.background import BackgroundScheduler
 from bitarray import bitarray
 import base64
+import json
 
 TOTAL_CHECKBOXES = 1_000_000
 REACT_BUILD_DIRECTORY = os.path.abspath(os.path.join(os.path.dirname(__file__), 'dist'))
@@ -41,6 +42,9 @@ if USE_REDIS:
 
     initialize_redis()
 
+    pubsub = redis_client.pubsub(ignore_subscribe_messages=True)
+    pubsub.subscribe('bit_toggle_channel')
+
     # Lua script for atomic bit setting and count update
     set_bit_script = """
     local key = KEYS[1]
@@ -66,6 +70,10 @@ if USE_REDIS:
 
     def get_count():
         return int(redis_client.get('count') or 0)
+    
+    def emit_toggle(index, new_value):
+        redis_client.publish('bit_toggle_channel', json.dumps({'index': index, 'value': new_value}))
+
 else:
     # In-memory storage
     in_memory_storage = {'bitset': bitarray('0' * TOTAL_CHECKBOXES), 'count': 0}
@@ -83,6 +91,9 @@ else:
     
     def get_count():
         return in_memory_storage['count']
+    
+    def emit_toggle(index, new_value):
+        socketio.emit('bit_toggled', {'index': index, 'value': new_value})
 
 def state_snapshot():
     full_state = get_full_state()
@@ -104,7 +115,8 @@ def toggle_bit(index):
     print(f"Setting bit {index} to {new_value} from {current_value}")
     set_bit(index, new_value)
     
-    socketio.emit('bit_toggled', {'index': index, 'value': new_value})
+    # socketio.emit('bit_toggled', {'index': index, 'value': new_value})
+    emit_toggle(index, new_value)
     return jsonify({
         'index': index,
         'value': new_value,
@@ -124,6 +136,37 @@ def emit_state_updates():
     scheduler.start()
 
 emit_state_updates()
+
+def handle_redis_messages():
+    if USE_REDIS:
+        message_count = 0
+        while True:
+            message = pubsub.get_message(timeout=0.01)
+            if message is None:
+                # No more messages available
+                break
+
+            if message['type'] == 'message':
+                try:
+                    data = json.loads(message['data'])
+                    socketio.emit('bit_toggled', data)
+                    message_count += 1
+                except json.JSONDecodeError:
+                    print(f"Failed to decode message: {message['data']}")
+
+            # Process up to 100 messages per job execution to prevent long-running jobs
+            if message_count >= 100:
+                break
+
+        if message_count > 0:
+            print(f"Processed {message_count} messages")
+
+def setup_redis_listener():
+    if USE_REDIS:
+        print("Redis listener job added to scheduler")
+        scheduler.add_job(handle_redis_messages, 'interval', seconds=0.1)
+
+setup_redis_listener()
 
 if __name__ == '__main__':
     set_bit(0, True)
