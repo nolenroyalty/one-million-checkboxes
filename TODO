@@ -1,7 +1,5 @@
 * set up logging
 * set up a job to disable shit randomly
-* better encoding!
-* fix bitset stuff
 
 * ADD BASIC DEBOUNCING
     * issue an alert if you've clicked more than 10 boxes in a second
