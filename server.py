@@ -10,7 +10,9 @@ from bitarray import bitarray
 import base64
 import json
 import time
+from datetime import datetime
 
+MAX_LOGS_PER_DAY = 5_000_000
 TOTAL_CHECKBOXES = 1_000_000
 REACT_BUILD_DIRECTORY = os.path.abspath(os.path.join(os.path.dirname(__file__), 'dist'))
 
@@ -95,9 +97,9 @@ if USE_REDIS:
     def emit_toggle(index, new_value):
         redis_client.publish('bit_toggle_channel', json.dumps({'index': index, 'value': new_value}))
 
-    one_second_limiter = RedisRateLimiter(redis_client, limit=6, window=1)
-    fifteen_second_limiter = RedisRateLimiter(redis_client, limit=2, window=15)
-    sixty_second_limiter = RedisRateLimiter(redis_client, limit=210, window=60)
+    one_second_limiter = RedisRateLimiter(redis_client, limit=7, window=1)
+    fifteen_second_limiter = RedisRateLimiter(redis_client, limit=80, window=15)
+    sixty_second_limiter = RedisRateLimiter(redis_client, limit=240, window=60)
     
     connection_limiter = RedisRateLimiter(redis_client, limit=20, window=15)
 
@@ -108,6 +110,24 @@ if USE_REDIS:
     
     def allow_connection(key):
         return connection_limiter.is_allowed(key)
+
+    def log_checkbox_toggle(remote_ip, checkbox_index, checked_state):
+        timestamp = datetime.now().isoformat()
+        log_entry = f"{timestamp}|{remote_ip}|{checkbox_index}|{checked_state}"
+
+        # Use the current date as part of the key
+        key = f"checkbox_logs:{datetime.now().strftime('%Y-%m-%d')}"
+
+        # Push the log entry to the list
+        redis_client.rpush(key, log_entry)
+
+        # Check if we've exceeded the max number of logs
+        if redis_client.llen(key) > MAX_LOGS_PER_DAY:
+            # Remove oldest log entry
+            redis_client.lpop(key)
+
+            # You might want to emit an alert here
+            print("WARNING: Max logs reached for today")
 else:
     # In-memory storage
     in_memory_storage = {'bitset': bitarray('0' * TOTAL_CHECKBOXES), 'count': 0}
@@ -137,6 +157,9 @@ else:
     def allow_connection(key):
         return True
 
+    def log_checkbox_toggle(remote_ip, checkbox_index, checked_state):
+        pass
+
 def state_snapshot():
     full_state = get_full_state()
     count = get_count()
@@ -156,11 +179,18 @@ def handle_toggle(data):
     if not allow_toggle(request.sid):
         print(f"Rate limiting toggle request for {request.sid}")
         return False
+    count = get_count()
+    if count >= 1_000_000:
+        print("DISABLED TOGGLE EXCEEDED MAX")
+        return False
+    
     index = data['index']
     current_value = get_bit(index)
     new_value = not current_value
     print(f"Setting bit {index} to {new_value} from {current_value}")
     set_bit(index, new_value)
+    forwarded_for = request.headers.get('X-Forwarded-For') or "UNKNOWN_IP"
+    log_checkbox_toggle(forwarded_for, index, new_value)
     
     emit_toggle(index, new_value)
 

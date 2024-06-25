@@ -20,7 +20,7 @@ class BitSet {
     }
     const byteIndex = Math.floor(index / 8);
     const bitOffset = 7 - (index % 8);
-    const current = this.bytes[byteIndex] && 1 << bitOffset;
+    const current = this.bytes[byteIndex] & (1 << bitOffset);
     if (value) {
       this.bytes[byteIndex] |= 1 << bitOffset;
       if (current === 0) {

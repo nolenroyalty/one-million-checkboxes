@@ -11,9 +11,9 @@ import useClickTracker from "../../hooks/use-click-tracker";
 const TOTAL_CHECKBOXES = 1000000;
 const CHECKBOX_SIZE = 35;
 const OVERSCAN_COUNT = 5;
-const ONE_SECOND_THRESHOLD = 8;
-const FIFTEEN_SECOND_THRESHOLD = 55;
-const SIXTY_SECOND_THRESHOLD = 210;
+const ONE_SECOND_THRESHOLD = 7;
+const FIFTEEN_SECOND_THRESHOLD = 80;
+const SIXTY_SECOND_THRESHOLD = 240;
 
 const useForceUpdate = ({ bitSetRef, setCheckCount }) => {
   const [, setTick] = useState(0);
@@ -103,7 +103,7 @@ const initialSelfCheckboxState = () => ({
   recentlyChecked: false,
 });
 
-const scoreString = (selfCheckboxState) => {
+const scoreString = ({ selfCheckboxState, allChecked }) => {
   const colors = ["gold", "red", "green", "purple"];
   const colorsToInclude = colors
     .map((color) => {
@@ -120,7 +120,7 @@ const scoreString = (selfCheckboxState) => {
 
   return (
     <p>
-      You have checked {selfCheckboxState.total}{" "}
+      You {allChecked ? "" : "have "}checked {selfCheckboxState.total}{" "}
       {colorsToInclude.length > 0 ? "(" : ""}
       {colorsToInclude.map(([color, count]) => {
         return (
@@ -151,6 +151,7 @@ const App = () => {
   const socketRef = useRef();
   const [clickCounts, trackClick] = useClickTracker();
   const [disabled, setDisabled] = useState(false);
+  const [allChecked, setAllChecked] = useState(false);
   const clickTimeout = React.useRef();
 
   const [selfCheckboxState, setSelfCheckboxState] = useState(() => {
@@ -185,6 +186,10 @@ const App = () => {
           base64String: data.full_state,
           count: data.count,
         });
+        if (data.count === 1000000) {
+          setDisabled(true);
+          setAllChecked(true);
+        }
         setCheckCount(data.count);
         bitSetRef.current = bitset;
         setIsLoading(false);
@@ -210,11 +215,21 @@ const App = () => {
 
     // Listen for full state updates
     socket.on("full_state", (data) => {
-      console.debug(`Received full state update: ${JSON.stringify(data)}`);
+      console.debug(`Received full state update`);
       const newBitset = new BitSet({
         base64String: data.full_state,
         count: data.count,
       });
+      if (data.count === 1000000) {
+        setDisabled(true);
+        setAllChecked(true);
+        clearTimeout(clickTimeout.current);
+      } else {
+        if (!clickTimeout.current) {
+          setDisabled(false);
+        }
+        setAllChecked(false);
+      }
       const recentlyChecked = { ...recentlyCheckedClientSide.current };
       Object.entries(recentlyChecked).forEach(([index, { value, timeout }]) => {
         newBitset.set(index, value);
@@ -243,11 +258,15 @@ const App = () => {
         clickTimeout.current = setTimeout(() => {
           setDisabled(false);
         }, 2500);
-
-        console.log(`${JSON.stringify(clickCounts.current)}`);
       } else {
         try {
           bitSetRef.current?.toggle(index);
+          const count = bitSetRef.current.count();
+          setCheckCount(count);
+          if (count === 1000000) {
+            setDisabled(true);
+            setAllChecked(true);
+          }
           forceUpdate();
           const isChecked = bitSetRef.current?.get(index);
           setSelfCheckboxState((prev) => {
@@ -324,7 +343,7 @@ const App = () => {
   };
 
   const checkCountString = abbrNum(checkCount, 2);
-  const youHaveChecked = scoreString(selfCheckboxState);
+  const youHaveChecked = scoreString({ selfCheckboxState, allChecked });
 
   return (
     <Wrapper>
@@ -336,7 +355,11 @@ const App = () => {
         <CountHead style={{ "--opacity": isLoading ? 0 : 1 }}>
           {checkCountString} boxes are ✅
         </CountHead>
-        <Explanation>(checking a box checks it for everyone!)</Explanation>
+        {allChecked ? (
+          <Explanation>🎉 we checked every box! 🎉</Explanation>
+        ) : (
+          <Explanation>(checking a box checks it for everyone!)</Explanation>
+        )}
         <YouHaveChecked>{youHaveChecked}</YouHaveChecked>
       </Heading>
       <form

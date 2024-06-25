@@ -12,6 +12,8 @@ LOCAL_DIST="./dist"
 LOCAL_SERVER="./server.py"
 LOCAL_GUNICORN="./start_gunicorn.sh"
 LOCAL_REQUIREMENTS="./requirements.txt"
+LOCAL_CLEANUPSH="./cleanup.sh"
+LOCAL_CLEANUPPY="./cleanup_old_logs.py"
 
 # Rsync options
 RSYNC_OPTS="-avz --delete"
@@ -25,6 +27,14 @@ ssh -i $SSH_KEY root@${REMOTE_HOST} -- chmod -R 755 ${WWW_DIR}
 # Sync server.py
 echo "Syncing server.py..."
 rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$LOCAL_SERVER" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
+
+# Sync cleanup.sh
+echo "Syncing cleanup.sh..."
+rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$LOCAL_CLEANUPSH" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
+
+# Sync cleanup_old_logs.py
+echo "Syncing cleanup_old_logs.py..."
+rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$LOCAL_CLEANUPPY" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
 
 # Sync start_gunicorn.sh
 echo "Syncing start_gunicorn.sh..."

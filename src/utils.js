@@ -8,7 +8,7 @@ export function abbrNum(number, decPlaces) {
   decPlaces = Math.pow(10, decPlaces);
 
   // Enumerate number abbreviations
-  var abbrev = ["k", "m", "b", "t"];
+  var abbrev = ["K", "M", "B", "T"];
 
   // Go through the array backwards, so we do the largest first
   for (var i = abbrev.length - 1; i >= 0; i--) {
@@ -19,7 +19,8 @@ export function abbrNum(number, decPlaces) {
     if (size <= number) {
       // Here, we multiply by decPlaces, round, and then divide by decPlaces.
       // This gives us nice rounding to a particular decimal place.
-      number = Math.round((number * decPlaces) / size) / decPlaces;
+
+      number = Math.floor((number * decPlaces) / size) / decPlaces;
 
       // Handle special case where we round up to the next abbreviation
       if (number === 1000 && i < abbrev.length - 1) {
