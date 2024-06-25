@@ -2,3 +2,10 @@
 * set up a job to disable shit randomly
 * better encoding!
 * fix bitset stuff
+
+* ADD BASIC DEBOUNCING
+    * issue an alert if you've clicked more than 10 boxes in a second
+    * disable if you've clicked more than 100 boxes in 60 seconds (until you haven't)
+    * server-side, do something similar but less extreme by IP
+        * add a UUID generated client-side for this
+    * uncheck boxes randomly IF lots have been checked recently
