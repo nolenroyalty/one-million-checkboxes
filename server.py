@@ -9,6 +9,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from bitarray import bitarray
 import base64
 import json
+import time
 
 TOTAL_CHECKBOXES = 1_000_000
 REACT_BUILD_DIRECTORY = os.path.abspath(os.path.join(os.path.dirname(__file__), 'dist'))
@@ -20,6 +21,26 @@ scheduler = BackgroundScheduler()
 
 # Configuration
 USE_REDIS = os.environ.get('USE_REDIS', 'false').lower() == 'true'
+
+class RedisRateLimiter:
+    def __init__(self, redis_client, limit, window):
+        self.redis = redis_client
+        self.limit = limit
+        self.window = window
+
+    def is_allowed(self, key: str) -> bool:
+        pipe = self.redis.pipeline()
+        now = int(time.time())
+        key = f'rate_limit:{key}:{self.window}'  # Include window in the key
+        
+        pipe.zadd(key, {now: now})
+        pipe.zremrangebyscore(key, 0, now - self.window)
+        pipe.zcard(key)
+        pipe.expire(key, self.window)
+        
+        _, _, count, _ = pipe.execute()
+
+        return count <= self.limit
 
 if USE_REDIS:
     import redis
@@ -74,6 +95,19 @@ if USE_REDIS:
     def emit_toggle(index, new_value):
         redis_client.publish('bit_toggle_channel', json.dumps({'index': index, 'value': new_value}))
 
+    one_second_limiter = RedisRateLimiter(redis_client, limit=6, window=1)
+    fifteen_second_limiter = RedisRateLimiter(redis_client, limit=2, window=15)
+    sixty_second_limiter = RedisRateLimiter(redis_client, limit=210, window=60)
+    
+    connection_limiter = RedisRateLimiter(redis_client, limit=20, window=15)
+
+    limiters = [one_second_limiter, fifteen_second_limiter, sixty_second_limiter]
+
+    def allow_toggle(key):
+        return all(limiter.is_allowed(key) for limiter in limiters)
+    
+    def allow_connection(key):
+        return connection_limiter.is_allowed(key)
 else:
     # In-memory storage
     in_memory_storage = {'bitset': bitarray('0' * TOTAL_CHECKBOXES), 'count': 0}
@@ -94,6 +128,14 @@ else:
     
     def emit_toggle(index, new_value):
         socketio.emit('bit_toggled', {'index': index, 'value': new_value})
+    
+    limiters = []
+
+    def allow_toggle(key):
+        return True
+    
+    def allow_connection(key):
+        return True
 
 def state_snapshot():
     full_state = get_full_state()
@@ -111,6 +153,9 @@ def emit_full_state():
 
 @socketio.on('toggle_bit')
 def handle_toggle(data):
+    if not allow_toggle(request.sid):
+        print(f"Rate limiting toggle request for {request.sid}")
+        return False
     index = data['index']
     current_value = get_bit(index)
     new_value = not current_value
@@ -127,8 +172,18 @@ def serve(path):
     else:
         return send_file(os.path.join(app.static_folder, 'index.html'))
     
+
+@socketio.on('connect')
+def handle_connect():
+    forwarded_for = request.headers.get('X-Forwarded-For')
+    if forwarded_for and allow_connection(forwarded_for):
+        return True
+    else:
+        print(f"Rate limiting connection for {forwarded_for}")
+        return False
+
 def emit_state_updates():
-    scheduler.add_job(emit_full_state, 'interval', seconds=5)
+    scheduler.add_job(emit_full_state, 'interval', seconds=30)
     scheduler.start()
 
 emit_state_updates()
