@@ -141,6 +141,7 @@ const App = () => {
   const forceUpdate = useForceUpdate({ bitSetRef, setCheckCount });
   const [isLoading, setIsLoading] = useState(true);
   const recentlyCheckedClientSide = useRef({});
+  const socketRef = useRef();
   const [selfCheckboxState, setSelfCheckboxState] = useState(() => {
     const fromLocal = localStorage.getItem("selfCheckboxState");
     try {
@@ -187,6 +188,7 @@ const App = () => {
 
   useEffect(() => {
     const socket = io.connect();
+    socketRef.current = socket;
 
     // Listen for bit toggle events
     socket.on("bit_toggled", (data) => {
@@ -233,7 +235,7 @@ const App = () => {
           }
           return newState;
         });
-        fetch(`/api/toggle/${index}`, { method: "POST" });
+        socketRef.current?.emit("toggle_bit", { index });
       } catch (error) {
         console.error("Failed to toggle bit:", error);
       } finally {
