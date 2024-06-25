@@ -95,7 +95,7 @@ def get_initial_state():
 
 def emit_full_state():
     print("Emitting full state")
-    socketio.emit('full_state', state_snapshot())
+    socketio.emit('full_state', state_snapshot(), broadcast=True)
 
 @app.route('/api/toggle/<int:index>', methods=['POST'])
 def toggle_bit(index):
@@ -104,7 +104,7 @@ def toggle_bit(index):
     print(f"Setting bit {index} to {new_value} from {current_value}")
     set_bit(index, new_value)
     
-    socketio.emit('bit_toggled', {'index': index, 'value': new_value})
+    socketio.emit('bit_toggled', {'index': index, 'value': new_value}, broadcast=True)
     return jsonify({
         'index': index,
         'value': new_value,
