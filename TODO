@@ -9,3 +9,11 @@
     * server-side, do something similar but less extreme by IP
         * add a UUID generated client-side for this
     * uncheck boxes randomly IF lots have been checked recently
+
+RESIZE DROPLET!
+
+MAYBE:
+    * move to "total checked"
+    * show how many *you* have checked
+    * show how many *you* were the first to check
+    * show how many colored ones *you* were the first to check

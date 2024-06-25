@@ -1,9 +1,8 @@
 #!/bin/bash
 
-NUM_PROCESSES=4  # Adjust this based on your server's capabilities
 BASE_PORT=5001
 
-for i in 0 1 2 3
+for i in 0 1 2 3 4 5
 do
     PORT=$((BASE_PORT + i))
     gunicorn --worker-class eventlet --workers 1 --threads 4 --bind 127.0.0.1:$PORT server:app &

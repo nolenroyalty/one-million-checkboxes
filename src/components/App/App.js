@@ -5,6 +5,7 @@ import styled, { keyframes } from "styled-components";
 import BitSet from "../../bitset";
 import io from "socket.io-client";
 import INDICES from "../../randomizedColors";
+import { abbrNum } from "../../utils";
 
 const TOTAL_CHECKBOXES = 1000000;
 const CHECKBOX_SIZE = 35; // Size of each checkbox (width and height)
@@ -86,6 +87,17 @@ const CheckboxWrapper = styled.div`
   animation: ${fadeIn} 0.4s;
 `;
 
+const initialSelfCheckboxState = () => ({
+  total: 0,
+  totalFirst: 0,
+  totalGold: 0,
+  totalRed: 0,
+  totalGreen: 0,
+  totalPurple: 0,
+  totalOrange: 0,
+  recentlyChecked: false,
+});
+
 const App = () => {
   const { width, height } = useWindowSize();
   const gridRef = useRef();
@@ -99,6 +111,28 @@ const App = () => {
   const forceUpdate = useForceUpdate({ bitSetRef, setCheckCount });
   const [isLoading, setIsLoading] = useState(true);
   const recentlyCheckedClientSide = useRef({});
+  const [selfCheckboxState, setSelfCheckboxState] = useState(() => {
+    const fromLocal = localStorage.getItem("selfCheckboxState");
+    try {
+      return fromLocal ? JSON.parse(fromLocal) : initialSelfCheckboxState();
+    } catch (error) {
+      console.error(
+        "Failed to parse selfCheckboxState from localStorage:",
+        error
+      );
+      const initial = initialSelfCheckboxState();
+      localStorage.setItem("selfCheckboxState", JSON.stringify(initial));
+      return initial;
+    }
+  });
+
+  React.useEffect(() => {
+    console.log(JSON.stringify(selfCheckboxState));
+    localStorage.setItem(
+      "selfCheckboxState",
+      JSON.stringify(selfCheckboxState)
+    );
+  }, [selfCheckboxState]);
 
   useEffect(() => {
     const fetchInitialState = async () => {
@@ -167,9 +201,16 @@ const App = () => {
       try {
         bitSetRef.current.toggle(index);
         forceUpdate();
+        const isChecked = bitSetRef.current.get(index);
+        setSelfCheckboxState((prev) => {
+          const newState = { ...prev };
+          newState.total += isChecked ? 1 : -1;
+          return newState;
+        });
         fetch(`/api/toggle/${index}`, { method: "POST" });
       } catch (error) {
         console.error("Failed to toggle bit:", error);
+      } finally {
       }
     },
     [forceUpdate]
@@ -229,6 +270,8 @@ const App = () => {
     setJumpToIndex("");
   };
 
+  const checkCountString = abbrNum(checkCount, 2);
+
   return (
     <Wrapper>
       <Heading style={{ "--width": columnCount * CHECKBOX_SIZE + "px" }}>
@@ -237,9 +280,21 @@ const App = () => {
         </SiteHead>
         <Title>One Million Checkboxes</Title>
         <CountHead style={{ "--opacity": isLoading ? 0 : 1 }}>
-          {checkCount} checked
+          {checkCountString} boxes are ✅
         </CountHead>
         <Explanation>(checking a box checks it for everyone!)</Explanation>
+        <YouHaveChecked>
+          <p>You have checked {selfCheckboxState.total} boxes</p>
+          <p>
+            You were first to {selfCheckboxState.totalFirst} (1k 123 150 900)
+            boxes
+          </p>
+          <p>0 boxes</p>
+          <p>0 boxes</p>
+          <p>0 boxes</p>
+          <p>0 boxes</p>
+          <p>0 boxes</p>
+        </YouHaveChecked>
       </Heading>
       <form
         onSubmit={handleJumpToCheckbox}
@@ -295,23 +350,25 @@ const Heading = styled.div`
 
   align-items: baseline;
   width: var(--width);
-  margin: 10px auto 0;
+  margin: -4px auto 0;
   grid-template-columns: 1fr auto 1fr;
-  grid-template-rows: auto auto;
+  grid-template-rows: auto auto auto;
   grid-template-areas:
     "site title count"
-    ". sub .";
+    ". sub ."
+    "you you you";
 
   padding-bottom: 10px;
   border-bottom: 2px solid var(--dark);
 
   @media (max-width: 850px) {
     grid-template-columns: 1fr auto auto 1fr;
-    grid-template-rows: auto auto auto;
+    grid-template-rows: auto auto auto auto;
     grid-template-areas:
       "title title title title"
       ". sub sub ."
-      "site site count count";
+      "site site count count"
+      "you you you you";
   }
 `;
 
@@ -340,7 +397,7 @@ const JumpButton = styled.button`
 const Title = styled.h1`
   margin: 0;
   padding: 8px 0 0 0;
-  font-size: clamp(1.75rem, 2vw + 1rem, 2.5rem);
+  font-size: clamp(1.75rem, 2vw + 1rem, 3.5rem);
   font-family: "Sunset Demi", serif;
   text-align: center;
   grid-area: title;
@@ -350,7 +407,7 @@ const SubHead = styled.h2`
   margin: 0;
   padding: 4px 0 0 0;
   flex: 1;
-  font-size: clamp(1rem, 0.15vw + 1rem, 1.5rem);
+  font-size: clamp(1rem, 0.15vw + 1rem, 2.5rem);
   font-family: "Apercu Regular Pro", sans-serif;
 
   & a {
@@ -375,6 +432,17 @@ const Explanation = styled.p`
   font-family: "Apercu Italic Pro", sans-serif;
   // italicize
   font-style: italic;
+  margin-top: -10px;
+`;
+
+const YouHaveChecked = styled.div`
+  font-size: 1rem;
+  font-family: "Apercu Regular Pro", sans-serif;
+  text-align: right;
+  grid-area: you;
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
 `;
 
 const SiteHead = styled(SubHead)`
