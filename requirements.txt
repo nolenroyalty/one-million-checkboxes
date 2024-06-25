@@ -1,10 +1,14 @@
 APScheduler==3.10.4
 bidict==0.23.1
+bitarray==2.9.2
 blinker==1.8.2
 click==8.1.7
+dnspython==2.6.1
+eventlet==0.36.1
 Flask==3.0.3
 Flask-Cors==4.0.1
 Flask-SocketIO==5.3.6
+greenlet==3.0.3
 gunicorn==22.0.0
 h11==0.14.0
 itsdangerous==2.2.0

@@ -3,6 +3,7 @@ from flask_socketio import SocketIO
 from flask_cors import CORS
 import os
 from apscheduler.schedulers.background import BackgroundScheduler
+from bitarray import bitarray
 
 
 TOTAL_CHECKBOXES = 1_000_000
@@ -18,7 +19,24 @@ USE_REDIS = os.environ.get('USE_REDIS', 'false').lower() == 'true'
 
 if USE_REDIS:
     import redis
-    redis_client = redis.Redis(host='localhost', port=6379, db=0)
+    redis_client = redis.Redis(
+        host=os.environ.get('REDIS_HOST', 'localhost'),
+        port=int(os.environ.get('REDIS_PORT', 6379)),
+        username=os.environ.get('REDIS_USERNAME', 'default'),
+        password=os.environ.get('REDIS_PASSWORD', ''),
+        db=0,
+        ssl=True
+    )
+
+    print("connected to redis")
+
+    def initialize_redis():
+        if not redis_client.exists('bitset'):
+            redis_client.set('bitset', b'\x00' * (TOTAL_CHECKBOXES // 8))
+        if not redis_client.exists('count'):
+            redis_client.set('count', '0')
+
+    initialize_redis()
 
     # Lua script for atomic bit setting and count update
     set_bit_script = """
@@ -33,7 +51,8 @@ if USE_REDIS:
     set_bit_sha = redis_client.script_load(set_bit_script)
 else:
     # In-memory storage
-    in_memory_storage = {'bitset': bytearray(1000000 // 8), 'count': 0}
+    in_memory_storage = {'bitset': bitarray('0' * TOTAL_CHECKBOXES), 'count': 0}
+
     
 
 def _redis_get_bit(index):
@@ -44,21 +63,13 @@ def _redis_set_bit(index, value):
     return diff != 0
 
 def _in_memory_get_bit(index):
-    byte_index = index // 8
-    bit_index = index % 8
-    return (in_memory_storage['bitset'][byte_index] & (1 << bit_index)) != 0
+    return bool(in_memory_storage['bitset'][index])
 
 def _in_memory_set_bit(index, value):
-    byte_index = index // 8
-    bit_index = index % 8
-    current_value = (in_memory_storage['bitset'][byte_index] & (1 << bit_index)) != 0
+    current_value = in_memory_storage['bitset'][index]
     if current_value != value:
-        if value:
-            in_memory_storage['bitset'][byte_index] |= (1 << bit_index)
-            in_memory_storage['count'] += 1
-        else:
-            in_memory_storage['bitset'][byte_index] &= ~(1 << bit_index)
-            in_memory_storage['count'] -= 1
+        in_memory_storage['bitset'][index] = value
+        in_memory_storage['count'] += 1 if value else -1
         return True
     return False
 
@@ -74,39 +85,28 @@ def set_bit(index, value):
     else:
         _in_memory_set_bit(index, value)
 
-
-@app.route('/api/bitset', methods=['GET'])
-def get_bitset():
-    if USE_REDIS:
-        bitset = redis_client.get('bitset')
-        count = int(redis_client.get('count') or 0)
-    else:
-        bitset = in_memory_storage['bitset']
-        count = in_memory_storage['count']
-    return jsonify({'bitset': bitset.hex(), 'count': count})
-
 def create_rle_state():
     if USE_REDIS:
         # bitset = redis_client.get('bitset')
         count = int(redis_client.get('count') or 0)
+        raw_bitset = redis_client.get('bitset')
+        bitset = bitarray(endian='little').frombytes(raw_bitset)
     else:
         # bitset = in_memory_storage['bitset']
         count = in_memory_storage['count']
+        bitset = in_memory_storage['bitset']
     
     bits_that_are_set = []
-    start_index = 0
-    set_count = 0
-    for i in range(TOTAL_CHECKBOXES):
-        if get_bit(i) and set_count > 0:
-            set_count += 1
-        elif get_bit(i) and set_count == 0:
+    start_index = -1
+    for i, bit in enumerate(bitset):
+        if bit and start_index == -1:
             start_index = i
-            set_count = 1
-        elif not get_bit(i) and set_count > 0:
-            bits_that_are_set.append((start_index, set_count))
-            set_count = 0
-    if set_count > 0:
-        bits_that_are_set.append((start_index, set_count))
+        elif not bit and start_index != -1:
+            bits_that_are_set.append((start_index, i - start_index))
+            start_index = -1
+
+    if start_index != -1:
+        bits_that_are_set.append((start_index, len(bitset) - start_index))
     
     return { 'setBits': bits_that_are_set, 'count': count }
 
@@ -149,14 +149,12 @@ def serve(path):
         return send_file(os.path.join(app.static_folder, 'index.html'))
     
 
-scheduler.add_job(emit_full_state, 'interval', seconds=5)
+scheduler.add_job(emit_full_state, 'interval', seconds=60)
 scheduler.start()
 
 if __name__ == '__main__':
-    for x in range(100_000):
-        set_bit(x, True)
     set_bit(0, True)
     set_bit(1, True)
     set_bit(100, True)
     set_bit(101, True)
-    socketio.run(app, host="0.0.0.0", port=5001)
+    socketio.run(app, port=5001)

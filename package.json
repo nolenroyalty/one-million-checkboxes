@@ -2,7 +2,6 @@
   "name": "one-million-checkboxes",
   "version": "1.0.0",
   "description": "One million checkboxes, synced for everyone.",
-  "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "predev": "rimraf .parcel-cache dist",
