@@ -23,26 +23,29 @@ const useForceUpdate = ({ bitSetRef, setCheckCount }) => {
   }, [bitSetRef, setCheckCount]);
 };
 
-const Checkbox = React.memo(({ index, style, isChecked, handleChange }) => {
-  let backgroundColor = null;
-  if (INDICES[index]) {
-    backgroundColor = `var(--${INDICES[index]}`;
-  }
+const Checkbox = React.memo(
+  ({ index, style, isChecked, handleChange, disabled }) => {
+    let backgroundColor = null;
+    if (INDICES[index]) {
+      backgroundColor = `var(--${INDICES[index]}`;
+    }
 
-  return (
-    <CheckboxWrapper style={style}>
-      <StyledCheckbox
-        type="checkbox"
-        id={`checkbox-${index}`}
-        checked={isChecked}
-        onChange={handleChange}
-      />
-      <MaybeColoredDiv
-        style={{ "--background-color": backgroundColor }}
-      ></MaybeColoredDiv>
-    </CheckboxWrapper>
-  );
-});
+    return (
+      <CheckboxWrapper style={style}>
+        <StyledCheckbox
+          type="checkbox"
+          id={`checkbox-${index}`}
+          checked={isChecked}
+          onChange={handleChange}
+          disabled={disabled}
+        />
+        <MaybeColoredDiv
+          style={{ "--background-color": backgroundColor }}
+        ></MaybeColoredDiv>
+      </CheckboxWrapper>
+    );
+  }
+);
 
 const isDesktopSafari = () => {
   const ua = navigator.userAgent;
@@ -147,6 +150,8 @@ const App = () => {
   const recentlyCheckedClientSide = useRef({});
   const socketRef = useRef();
   const [clickCounts, trackClick] = useClickTracker();
+  const [disabled, setDisabled] = useState(false);
+  const clickTimeout = React.useRef();
 
   const [selfCheckboxState, setSelfCheckboxState] = useState(() => {
     const fromLocal = localStorage.getItem("selfCheckboxState");
@@ -233,6 +238,12 @@ const App = () => {
         clickCounts.current.sixtySeconds > SIXTY_SECOND_THRESHOLD
       ) {
         alert("CHILL LOL");
+        setDisabled(true);
+        clickTimeout.current && clearTimeout(clickTimeout.current);
+        clickTimeout.current = setTimeout(() => {
+          setDisabled(false);
+        }, 2500);
+
         console.log(`${JSON.stringify(clickCounts.current)}`);
       } else {
         try {
@@ -291,10 +302,11 @@ const App = () => {
           style={style}
           isChecked={isChecked}
           handleChange={handleChange}
+          disabled={disabled}
         />
       );
     },
-    [columnCount, toggleBit]
+    [columnCount, disabled, toggleBit]
   );
 
   const handleJumpToCheckbox = (e) => {
