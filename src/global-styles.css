@@ -16,7 +16,8 @@ body {
   --blue: #3777ff;
   --dark: #181a21;
   --red: hsla(0, 80%, 70%, 1);
-  --gold: hsla(52, 80%, 70%, 1);
+  /* --gold: hsla(52, 80%, 70%, 1); */
+  --gold: #c2b043;
   --green: hsla(103, 80%, 70%, 1);
   /* --blue: hsla(166, 80%, 70%, 1); */
   --purple: hsla(256, 80%, 70%, 1);

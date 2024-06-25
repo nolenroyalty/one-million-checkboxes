@@ -89,7 +89,6 @@ const CheckboxWrapper = styled.div`
 
 const initialSelfCheckboxState = () => ({
   total: 0,
-  totalFirst: 0,
   totalGold: 0,
   totalRed: 0,
   totalGreen: 0,
@@ -97,6 +96,38 @@ const initialSelfCheckboxState = () => ({
   totalOrange: 0,
   recentlyChecked: false,
 });
+
+const scoreString = (selfCheckboxState) => {
+  const colors = ["gold", "red", "green", "purple", "orange"];
+  const colorsToInclude = colors
+    .map((color) => {
+      const count =
+        selfCheckboxState[
+          `total${color.charAt(0).toUpperCase()}${color.slice(1)}`
+        ];
+      if (count > 0) {
+        return [color, count];
+      }
+      return null;
+    })
+    .filter((el) => el !== null);
+
+  return (
+    <p>
+      You have checked {selfCheckboxState.total}{" "}
+      {colorsToInclude.length > 0 ? "(" : ""}
+      {colorsToInclude.map(([color, count]) => {
+        return (
+          <ColorSpan key={color} style={{ "--color": `var(--${color})` }}>
+            {abbrNum(count, 2)}
+          </ColorSpan>
+        );
+      })}
+      {colorsToInclude.length > 0 ? ") " : " "}
+      boxes
+    </p>
+  );
+};
 
 const App = () => {
   const { width, height } = useWindowSize();
@@ -205,6 +236,12 @@ const App = () => {
         setSelfCheckboxState((prev) => {
           const newState = { ...prev };
           newState.total += isChecked ? 1 : -1;
+          if (INDICES[index]) {
+            const color = INDICES[index];
+            newState[
+              `total${color.charAt(0).toUpperCase()}${color.slice(1)}`
+            ] += isChecked ? 1 : -1;
+          }
           return newState;
         });
         fetch(`/api/toggle/${index}`, { method: "POST" });
@@ -238,9 +275,6 @@ const App = () => {
           value: !isChecked,
           timeout,
         };
-        console.log(
-          `RECENTLY CHECKED: ${JSON.stringify(recentlyCheckedClientSide.current)}`
-        );
       };
 
       return (
@@ -271,6 +305,7 @@ const App = () => {
   };
 
   const checkCountString = abbrNum(checkCount, 2);
+  const youHaveChecked = scoreString(selfCheckboxState);
 
   return (
     <Wrapper>
@@ -283,18 +318,7 @@ const App = () => {
           {checkCountString} boxes are ✅
         </CountHead>
         <Explanation>(checking a box checks it for everyone!)</Explanation>
-        <YouHaveChecked>
-          <p>You have checked {selfCheckboxState.total} boxes</p>
-          <p>
-            You were first to {selfCheckboxState.totalFirst} (1k 123 150 900)
-            boxes
-          </p>
-          <p>0 boxes</p>
-          <p>0 boxes</p>
-          <p>0 boxes</p>
-          <p>0 boxes</p>
-          <p>0 boxes</p>
-        </YouHaveChecked>
+        <YouHaveChecked>{youHaveChecked}</YouHaveChecked>
       </Heading>
       <form
         onSubmit={handleJumpToCheckbox}
@@ -437,7 +461,7 @@ const Explanation = styled.p`
 
 const YouHaveChecked = styled.div`
   font-size: 1rem;
-  font-family: "Apercu Regular Pro", sans-serif;
+  font-family: "Apercu Bold Pro", sans-serif;
   text-align: right;
   grid-area: you;
   margin-top: 10px;
@@ -462,6 +486,14 @@ const Wrapper = styled.div`
   align-items: center;
   flex-direction: column;
   height: 100vh;
+`;
+
+const ColorSpan = styled.span`
+  color: var(--color);
+
+  &:not(:last-of-type):after {
+    content: " ";
+  }
 `;
 
 export default App;

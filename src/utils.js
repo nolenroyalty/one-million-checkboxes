@@ -1,4 +1,9 @@
 export function abbrNum(number, decPlaces) {
+  let negate = false;
+  if (number < 0) {
+    negate = true;
+    number = -1 * number;
+  }
   // 2 decimal places => 100, 3 => 1000, etc
   decPlaces = Math.pow(10, decPlaces);
 
@@ -17,7 +22,7 @@ export function abbrNum(number, decPlaces) {
       number = Math.round((number * decPlaces) / size) / decPlaces;
 
       // Handle special case where we round up to the next abbreviation
-      if (number == 1000 && i < abbrev.length - 1) {
+      if (number === 1000 && i < abbrev.length - 1) {
         number = 1;
         i++;
       }
@@ -30,5 +35,5 @@ export function abbrNum(number, decPlaces) {
     }
   }
 
-  return number;
+  return (negate ? "-" : "") + number;
 }
