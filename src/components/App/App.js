@@ -14,6 +14,7 @@ const useForceUpdate = ({ bitSetRef, setCheckCount }) => {
   return useCallback(() => {
     setTick((tick) => tick + 1);
     setCheckCount(bitSetRef.current.count());
+    console.log(`set check count to ${bitSetRef.current.count()}`);
   }, [bitSetRef, setCheckCount]);
 };
 
@@ -113,6 +114,7 @@ const App = () => {
 
     // Listen for bit toggle events
     socket.on("bit_toggled", (data) => {
+      console.log(`Received bit toggle event: ${JSON.stringify(data)}`);
       bitSetRef.current.makeThisValue(data.index, data.value);
       forceUpdate();
     });
@@ -141,6 +143,8 @@ const App = () => {
         }
       });
       bitSetRef.current = newBitset;
+      console.log(`New bitset count: ${newBitset.count()}`);
+      console.log(`data count: ${data.count}`);
       setCheckCount(data.count);
       forceUpdate();
     });

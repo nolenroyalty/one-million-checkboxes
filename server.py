@@ -5,7 +5,6 @@ import os
 from apscheduler.schedulers.background import BackgroundScheduler
 from bitarray import bitarray
 
-
 TOTAL_CHECKBOXES = 1_000_000
 REACT_BUILD_DIRECTORY = os.path.abspath(os.path.join(os.path.dirname(__file__), 'dist'))
 
@@ -56,10 +55,12 @@ else:
     
 
 def _redis_get_bit(index):
-    return bool(redis_client.getbit('bitset', index))
+    adjusted_index = TOTAL_CHECKBOXES - 1 - index
+    return bool(redis_client.getbit('bitset', adjusted_index))
 
 def _redis_set_bit(index, value):
-    diff = redis_client.evalsha(set_bit_sha, 1, 'bitset', index, int(value))
+    adjusted_index = TOTAL_CHECKBOXES - 1 - index
+    diff = redis_client.evalsha(set_bit_sha, 1, 'bitset', adjusted_index, int(value))
     return diff != 0
 
 def _in_memory_get_bit(index):
@@ -90,7 +91,8 @@ def create_rle_state():
         # bitset = redis_client.get('bitset')
         count = int(redis_client.get('count') or 0)
         raw_bitset = redis_client.get('bitset')
-        bitset = bitarray(endian='little').frombytes(raw_bitset)
+        bitset = bitarray(endian='big')
+        bitset.frombytes(raw_bitset)
     else:
         # bitset = in_memory_storage['bitset']
         count = in_memory_storage['count']
@@ -98,12 +100,20 @@ def create_rle_state():
     
     bits_that_are_set = []
     start_index = -1
-    for i, bit in enumerate(bitset):
-        if bit and start_index == -1:
-            start_index = i
-        elif not bit and start_index != -1:
-            bits_that_are_set.append((start_index, i - start_index))
-            start_index = -1
+    if USE_REDIS:
+        for i, bit in enumerate(bitset[::-1]):
+            if bit and start_index == -1:
+                start_index = i
+            elif not bit and start_index != -1:
+                bits_that_are_set.append((start_index, i - start_index))
+                start_index = -1
+    else:
+        for i, bit in enumerate(bitset):
+            if bit and start_index == -1:
+                start_index = i
+            elif not bit and start_index != -1:
+                bits_that_are_set.append((start_index, i - start_index))
+                start_index = -1
 
     if start_index != -1:
         bits_that_are_set.append((start_index, len(bitset) - start_index))
@@ -148,13 +158,16 @@ def serve(path):
     else:
         return send_file(os.path.join(app.static_folder, 'index.html'))
     
+def emit_state_updates():
+    scheduler.add_job(emit_full_state, 'interval', seconds=5)
+    scheduler.start()
 
-scheduler.add_job(emit_full_state, 'interval', seconds=60)
-scheduler.start()
+emit_state_updates()
 
 if __name__ == '__main__':
     set_bit(0, True)
     set_bit(1, True)
     set_bit(100, True)
     set_bit(101, True)
+    emit_state_updates()
     socketio.run(app, port=5001)
