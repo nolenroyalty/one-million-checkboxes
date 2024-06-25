@@ -8,6 +8,8 @@ eventlet==0.36.1
 Flask==3.0.3
 Flask-Cors==4.0.1
 Flask-SocketIO==5.3.6
+Flask-WTF==1.2.1
+gevent==24.2.1
 greenlet==3.0.3
 gunicorn==22.0.0
 h11==0.14.0
@@ -19,8 +21,12 @@ python-engineio==4.9.1
 python-socketio==5.11.3
 pytz==2024.1
 redis==5.0.6
+setuptools==70.1.0
 simple-websocket==1.0.0
 six==1.16.0
 tzlocal==5.2
 Werkzeug==3.0.3
 wsproto==1.2.0
+WTForms==3.1.2
+zope.event==5.0
+zope.interface==6.4.post2
