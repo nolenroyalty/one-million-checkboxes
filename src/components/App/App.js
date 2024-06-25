@@ -6,10 +6,14 @@ import BitSet from "../../bitset";
 import io from "socket.io-client";
 import INDICES from "../../randomizedColors";
 import { abbrNum } from "../../utils";
+import useClickTracker from "../../hooks/use-click-tracker";
 
 const TOTAL_CHECKBOXES = 1000000;
 const CHECKBOX_SIZE = 35;
 const OVERSCAN_COUNT = 5;
+const ONE_SECOND_THRESHOLD = 8;
+const FIFTEEN_SECOND_THRESHOLD = 55;
+const SIXTY_SECOND_THRESHOLD = 210;
 
 const useForceUpdate = ({ bitSetRef, setCheckCount }) => {
   const [, setTick] = useState(0);
@@ -142,6 +146,8 @@ const App = () => {
   const [isLoading, setIsLoading] = useState(true);
   const recentlyCheckedClientSide = useRef({});
   const socketRef = useRef();
+  const [clickCounts, trackClick] = useClickTracker();
+
   const [selfCheckboxState, setSelfCheckboxState] = useState(() => {
     const fromLocal = localStorage.getItem("selfCheckboxState");
     try {
@@ -220,28 +226,38 @@ const App = () => {
 
   const toggleBit = useCallback(
     async (index) => {
-      try {
-        bitSetRef.current?.toggle(index);
-        forceUpdate();
-        const isChecked = bitSetRef.current?.get(index);
-        setSelfCheckboxState((prev) => {
-          const newState = { ...prev };
-          newState.total += isChecked ? 1 : -1;
-          if (INDICES[index]) {
-            const color = INDICES[index];
-            newState[
-              `total${color.charAt(0).toUpperCase()}${color.slice(1)}`
-            ] += isChecked ? 1 : -1;
-          }
-          return newState;
-        });
-        socketRef.current?.emit("toggle_bit", { index });
-      } catch (error) {
-        console.error("Failed to toggle bit:", error);
-      } finally {
+      trackClick();
+      if (
+        clickCounts.current.oneSecond > ONE_SECOND_THRESHOLD ||
+        clickCounts.current.fifteenSeconds > FIFTEEN_SECOND_THRESHOLD ||
+        clickCounts.current.sixtySeconds > SIXTY_SECOND_THRESHOLD
+      ) {
+        alert("CHILL LOL");
+        console.log(`${JSON.stringify(clickCounts.current)}`);
+      } else {
+        try {
+          bitSetRef.current?.toggle(index);
+          forceUpdate();
+          const isChecked = bitSetRef.current?.get(index);
+          setSelfCheckboxState((prev) => {
+            const newState = { ...prev };
+            newState.total += isChecked ? 1 : -1;
+            if (INDICES[index]) {
+              const color = INDICES[index];
+              newState[
+                `total${color.charAt(0).toUpperCase()}${color.slice(1)}`
+              ] += isChecked ? 1 : -1;
+            }
+            return newState;
+          });
+          socketRef.current?.emit("toggle_bit", { index });
+        } catch (error) {
+          console.error("Failed to toggle bit:", error);
+        } finally {
+        }
       }
     },
-    [forceUpdate]
+    [clickCounts, forceUpdate, trackClick]
   );
 
   const Cell = React.useCallback(
