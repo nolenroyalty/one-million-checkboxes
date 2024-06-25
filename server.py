@@ -7,6 +7,7 @@ from flask_cors import CORS
 import os
 from apscheduler.schedulers.background import BackgroundScheduler
 from bitarray import bitarray
+import base64
 
 TOTAL_CHECKBOXES = 1_000_000
 REACT_BUILD_DIRECTORY = os.path.abspath(os.path.join(os.path.dirname(__file__), 'dist'))
@@ -51,86 +52,50 @@ if USE_REDIS:
     redis.call('incrby', 'count', diff)
     return diff"""
     set_bit_sha = redis_client.script_load(set_bit_script)
+
+    def get_bit(index):
+        return bool(redis_client.getbit('bitset', index))
+    
+    def set_bit(index, value):
+        diff = redis_client.evalsha(set_bit_sha, 1, 'bitset', index, int(value))
+        return diff != 0
+    
+    def get_full_state():
+        raw_data = redis_client.get("bitset")
+        return base64.b64encode(raw_data).decode('utf-8')
+
+    def get_count():
+        return int(redis_client.get('count') or 0)
 else:
     # In-memory storage
     in_memory_storage = {'bitset': bitarray('0' * TOTAL_CHECKBOXES), 'count': 0}
 
-    
+    def get_bit(index):
+        return bool(in_memory_storage['bitset'][index])
 
-def _redis_get_bit(index):
-    adjusted_index = TOTAL_CHECKBOXES - 1 - index
-    return bool(redis_client.getbit('bitset', adjusted_index))
-
-def _redis_set_bit(index, value):
-    adjusted_index = TOTAL_CHECKBOXES - 1 - index
-    diff = redis_client.evalsha(set_bit_sha, 1, 'bitset', adjusted_index, int(value))
-    return diff != 0
-
-def _in_memory_get_bit(index):
-    return bool(in_memory_storage['bitset'][index])
-
-def _in_memory_set_bit(index, value):
-    current_value = in_memory_storage['bitset'][index]
-    if current_value != value:
+    def set_bit(index, value):
+        current = in_memory_storage['bitset'][index]
         in_memory_storage['bitset'][index] = value
-        in_memory_storage['count'] += 1 if value else -1
-        return True
-    return False
+        in_memory_storage['count'] += value - current
 
-def get_bit(index):
-    if USE_REDIS:
-        return _redis_get_bit(index)
-    else:
-        return _in_memory_get_bit(index)
-
-def set_bit(index, value):
-    if USE_REDIS:
-        _redis_set_bit(index, value)
-    else:
-        _in_memory_set_bit(index, value)
-
-def create_rle_state():
-    if USE_REDIS:
-        # bitset = redis_client.get('bitset')
-        count = int(redis_client.get('count') or 0)
-        raw_bitset = redis_client.get('bitset')
-        bitset = bitarray(endian='big')
-        bitset.frombytes(raw_bitset)
-    else:
-        # bitset = in_memory_storage['bitset']
-        count = in_memory_storage['count']
-        bitset = in_memory_storage['bitset']
+    def get_full_state():
+        return base64.b64encode(in_memory_storage['bitset'].tobytes()).decode('utf-8')
     
-    bits_that_are_set = []
-    start_index = -1
-    if USE_REDIS:
-        for i, bit in enumerate(bitset[::-1]):
-            if bit and start_index == -1:
-                start_index = i
-            elif not bit and start_index != -1:
-                bits_that_are_set.append((start_index, i - start_index))
-                start_index = -1
-    else:
-        for i, bit in enumerate(bitset):
-            if bit and start_index == -1:
-                start_index = i
-            elif not bit and start_index != -1:
-                bits_that_are_set.append((start_index, i - start_index))
-                start_index = -1
+    def get_count():
+        return in_memory_storage['count']
 
-    if start_index != -1:
-        bits_that_are_set.append((start_index, len(bitset) - start_index))
-    
-    return { 'setBits': bits_that_are_set, 'count': count }
+def state_snapshot():
+    full_state = get_full_state()
+    count = get_count()
+    return {'full_state': full_state, 'count': count}
 
 @app.route('/api/initial-state')
 def get_initial_state():
-    state = create_rle_state()    
-    return jsonify(state)
+    return jsonify(state_snapshot())
 
 def emit_full_state():
     print("Emitting full state")
-    socketio.emit('full_state', create_rle_state())
+    socketio.emit('full_state', state_snapshot())
 
 @app.route('/api/toggle/<int:index>', methods=['POST'])
 def toggle_bit(index):
@@ -139,16 +104,10 @@ def toggle_bit(index):
     print(f"Setting bit {index} to {new_value} from {current_value}")
     set_bit(index, new_value)
     
-    if USE_REDIS:
-        count = int(redis_client.get('count') or 0)
-    else:
-        count = in_memory_storage['count']
-
     socketio.emit('bit_toggled', {'index': index, 'value': new_value})
     return jsonify({
         'index': index,
         'value': new_value,
-        'count': count
     })
 
 

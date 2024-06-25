@@ -1,43 +1,37 @@
 class BitSet {
-  constructor(size) {
-    this.size = size;
-    this.bits = new Uint32Array(Math.ceil(size / 32));
-    this.checkCount = 0;
-  }
-
-  set(index) {
-    const arrayIndex = Math.floor(index / 32);
-    const bitIndex = index % 32;
-    const current = this.bits[arrayIndex];
-    if ((current & (1 << bitIndex)) === 0) {
-      this.bits[arrayIndex] |= 1 << bitIndex;
-      this.checkCount++;
-    }
-  }
-
-  clear(index) {
-    const arrayIndex = Math.floor(index / 32);
-    const bitIndex = index % 32;
-    const current = this.bits[arrayIndex];
-    if ((current & (1 << bitIndex)) === 0) {
-      return;
-    }
-    this.bits[arrayIndex] &= ~(1 << bitIndex);
-    this.checkCount--;
-  }
-
-  makeThisValue(index, value) {
-    if (value) {
-      this.set(index);
-    } else {
-      this.clear(index);
+  constructor({ base64String, count }) {
+    const binaryString = atob(base64String);
+    this.bytes = new Uint8Array(binaryString.length);
+    this.checkCount = count;
+    for (let i = 0; i < binaryString.length; i++) {
+      this.bytes[i] = binaryString.charCodeAt(i);
     }
   }
 
   get(index) {
-    const arrayIndex = Math.floor(index / 32);
-    const bitIndex = index % 32;
-    return (this.bits[arrayIndex] & (1 << bitIndex)) !== 0;
+    const byteIndex = Math.floor(index / 8);
+    const bitOffset = 7 - (index % 8);
+    return (this.bytes[byteIndex] & (1 << bitOffset)) !== 0;
+  }
+
+  set(index, value) {
+    if (typeof value === "boolean") {
+      value = value ? 1 : 0;
+    }
+    const byteIndex = Math.floor(index / 8);
+    const bitOffset = 7 - (index % 8);
+    const current = this.bytes[byteIndex] && 1 << bitOffset;
+    if (value) {
+      this.bytes[byteIndex] |= 1 << bitOffset;
+      if (current === 0) {
+        this.checkCount++;
+      }
+    } else {
+      this.bytes[byteIndex] &= ~(1 << bitOffset);
+      if (current !== 0) {
+        this.checkCount--;
+      }
+    }
   }
 
   count() {
@@ -46,9 +40,9 @@ class BitSet {
 
   toggle(index) {
     if (this.get(index)) {
-      this.clear(index);
+      this.set(index, 0);
     } else {
-      this.set(index);
+      this.set(index, 1);
     }
   }
 }

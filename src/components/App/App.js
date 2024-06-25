@@ -8,8 +8,8 @@ import INDICES from "../../randomizedColors";
 import { abbrNum } from "../../utils";
 
 const TOTAL_CHECKBOXES = 1000000;
-const CHECKBOX_SIZE = 35; // Size of each checkbox (width and height)
-const OVERSCAN_COUNT = 5; // Number of items to render outside of the visible area
+const CHECKBOX_SIZE = 35;
+const OVERSCAN_COUNT = 5;
 
 const useForceUpdate = ({ bitSetRef, setCheckCount }) => {
   const [, setTick] = useState(0);
@@ -20,7 +20,6 @@ const useForceUpdate = ({ bitSetRef, setCheckCount }) => {
 };
 
 const Checkbox = React.memo(({ index, style, isChecked, handleChange }) => {
-  // const backgroundColor = index % 17 === 0 ? "hsla(47, 90%, 69%, 0.7)" : null;
   let backgroundColor = null;
   if (INDICES[index]) {
     backgroundColor = `var(--${INDICES[index]}`;
@@ -137,8 +136,8 @@ const App = () => {
   const gridWidth = Math.floor(width * 0.95);
   const columnCount = Math.floor(gridWidth / CHECKBOX_SIZE);
   const rowCount = Math.ceil(TOTAL_CHECKBOXES / columnCount);
-  const bitSetRef = useRef(new BitSet(TOTAL_CHECKBOXES));
-  const [checkCount, setCheckCount] = React.useState(bitSetRef.current.count());
+  const bitSetRef = useRef(null);
+  const [checkCount, setCheckCount] = React.useState(0);
   const forceUpdate = useForceUpdate({ bitSetRef, setCheckCount });
   const [isLoading, setIsLoading] = useState(true);
   const recentlyCheckedClientSide = useRef({});
@@ -170,12 +169,12 @@ const App = () => {
       try {
         const response = await fetch("/api/initial-state");
         const data = await response.json();
-        setCheckCount(data.count);
-        data.setBits.forEach(([index, count]) => {
-          for (let i = 0; i < count; i++) {
-            bitSetRef.current.set(index + i);
-          }
+        const bitset = new BitSet({
+          base64String: data.full_state,
+          count: data.count,
         });
+        setCheckCount(data.count);
+        bitSetRef.current = bitset;
         setIsLoading(false);
       } catch (error) {
         console.error("Failed to fetch initial state:", error);
@@ -192,32 +191,22 @@ const App = () => {
     // Listen for bit toggle events
     socket.on("bit_toggled", (data) => {
       console.log(`Received bit toggle event: ${JSON.stringify(data)}`);
-      bitSetRef.current.makeThisValue(data.index, data.value);
+      bitSetRef.current?.set(data.index, data.value);
       forceUpdate();
     });
 
     // Listen for full state updates
     socket.on("full_state", (data) => {
-      console.log(`Received full state update: ${JSON.stringify(data)}`);
-      const newBitset = new BitSet(TOTAL_CHECKBOXES);
+      console.debug(`Received full state update: ${JSON.stringify(data)}`);
+      const newBitset = new BitSet({
+        base64String: data.full_state,
+        count: data.count,
+      });
       const recentlyChecked = { ...recentlyCheckedClientSide.current };
       Object.entries(recentlyChecked).forEach(([index, { value, timeout }]) => {
-        newBitset.makeThisValue(index, value);
-      });
-      data.setBits.forEach(([startingIndex, count]) => {
-        for (let i = 0; i < count; i++) {
-          const index = startingIndex + i;
-          if (recentlyCheckedClientSide.current[index]) {
-            const { value, timeout } = recentlyCheckedClientSide.current[index];
-            console.log(`DROPPING UPDATE and using ${value} for ${index}`);
-          } else {
-            // console.log(`Setting ${index}`);
-            newBitset.set(index);
-          }
-        }
+        newBitset.set(index, value);
       });
       bitSetRef.current = newBitset;
-      setCheckCount(data.count);
       forceUpdate();
     });
 
@@ -230,9 +219,9 @@ const App = () => {
   const toggleBit = useCallback(
     async (index) => {
       try {
-        bitSetRef.current.toggle(index);
+        bitSetRef.current?.toggle(index);
         forceUpdate();
-        const isChecked = bitSetRef.current.get(index);
+        const isChecked = bitSetRef.current?.get(index);
         setSelfCheckboxState((prev) => {
           const newState = { ...prev };
           newState.total += isChecked ? 1 : -1;
@@ -258,7 +247,7 @@ const App = () => {
       const index = rowIndex * columnCount + columnIndex;
       if (index >= TOTAL_CHECKBOXES) return null;
 
-      const isChecked = bitSetRef.current.get(index);
+      const isChecked = bitSetRef.current?.get(index);
 
       const handleChange = () => {
         toggleBit(index);
