@@ -342,7 +342,6 @@ const App = () => {
     setJumpToIndex("");
   };
 
-  const checkCountString = abbrNum(checkCount, 2);
   const youHaveChecked = scoreString({ selfCheckboxState, allChecked });
 
   return (
@@ -353,7 +352,7 @@ const App = () => {
         </SiteHead>
         <Title>One Million Checkboxes</Title>
         <CountHead style={{ "--opacity": isLoading ? 0 : 1 }}>
-          {checkCountString} boxes are ✅
+          {checkCount} boxes are ✅
         </CountHead>
         {allChecked ? (
           <Explanation>🎉 we checked every box! 🎉</Explanation>

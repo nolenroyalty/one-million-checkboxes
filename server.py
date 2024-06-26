@@ -205,7 +205,7 @@ def serve(path):
 
 @socketio.on('connect')
 def handle_connect():
-    forwarded_for = request.headers.get('X-Forwarded-For')
+    forwarded_for = request.headers.get('X-Forwarded-For') or request.remote_addr
     if forwarded_for and allow_connection(forwarded_for):
         return True
     else:
