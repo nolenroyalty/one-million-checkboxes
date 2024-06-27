@@ -182,7 +182,7 @@ def handle_toggle(data):
         return False
     count = get_count()
     if count >= 1_000_000:
-        print("DISABLED TOGGLE EXCEEDED MAX")
+        # print("DISABLED TOGGLE EXCEEDED MAX")
         return False
     
     index = data['index']
