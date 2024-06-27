@@ -249,9 +249,17 @@ const App = () => {
     });
 
     socket.on("batched_bit_toggles", (updates) => {
-      console.log(`Received batch: ${updates.length} updates`);
-      updates.forEach(([index, value]) => {
-        bitSetRef.current?.set(index, value);
+      const trueUpdates = updates[0];
+      const falseUpdates = updates[1];
+
+      console.log(
+        `Received batch: ${trueUpdates.length} true / ${falseUpdates.length} false`
+      );
+      trueUpdates.forEach((index) => {
+        bitSetRef.current?.set(index, true);
+      });
+      falseUpdates.forEach((index) => {
+        bitSetRef.current?.set(index, false);
       });
       forceUpdate();
     });

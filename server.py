@@ -148,7 +148,8 @@ else:
     
     def emit_toggle(index, new_value):
         print("HERE")
-        socketio.emit('batched_bit_toggles', [[index,new_value]])
+        update = [[index], []] if new_value else [[], [index]]
+        socketio.emit('batched_bit_toggles', update)
     
     limiters = []
 
@@ -214,7 +215,7 @@ def serve(path):
         #return False
 
 def emit_state_updates():
-    scheduler.add_job(emit_full_state, 'interval', seconds=30)
+    scheduler.add_job(emit_full_state, 'interval', seconds=45)
     scheduler.start()
 
 emit_state_updates()
@@ -241,7 +242,17 @@ def handle_redis_messages():
                 break
 
         if message_count > 0:
-            socketio.emit('batched_bit_toggles', updates)
+            true_updates = []
+            false_updates = []
+            for update in updates:
+                index, value = update
+                if value:
+                    true_updates.append(index)
+                else:
+                    false_updates.append(index)
+            to_broadcast = [true_updates, false_updates]
+
+            socketio.emit('batched_bit_toggles', to_broadcast)
             print(f"Processed {message_count} messages")
 
 def setup_redis_listener():
