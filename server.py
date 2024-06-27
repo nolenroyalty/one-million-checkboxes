@@ -147,7 +147,6 @@ else:
         return in_memory_storage['count']
     
     def emit_toggle(index, new_value):
-        print("HERE")
         update = [[index], []] if new_value else [[], [index]]
         socketio.emit('batched_bit_toggles', update)
     
@@ -189,7 +188,6 @@ def handle_toggle(data):
     index = data['index']
     current_value = get_bit(index)
     new_value = not current_value
-    print(f"Setting bit {index} to {new_value} from {current_value}")
     set_bit(index, new_value)
     forwarded_for = request.headers.get('X-Forwarded-For') or "UNKNOWN_IP"
     log_checkbox_toggle(forwarded_for, index, new_value)
