@@ -251,7 +251,7 @@ def handle_redis_messages():
             to_broadcast = [true_updates, false_updates]
 
             socketio.emit('batched_bit_toggles', to_broadcast)
-            print(f"Processed {message_count} messages")
+            # print(f"Processed {message_count} messages")
 
 def setup_redis_listener():
     if USE_REDIS:
