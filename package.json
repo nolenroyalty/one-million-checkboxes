@@ -6,6 +6,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "predev": "rimraf .parcel-cache dist",
     "dev": "parcel public/index.html",
+    "prebuild": "rimraf .parcel-cache dist",
     "build": "parcel build public/index.html",
     "new-component": "new-component"
   },

@@ -12,7 +12,7 @@ import json
 import time
 from datetime import datetime
 
-MAX_LOGS_PER_DAY = 5_000_000
+MAX_LOGS_PER_DAY = 200_000_000
 TOTAL_CHECKBOXES = 1_000_000
 REACT_BUILD_DIRECTORY = os.path.abspath(os.path.join(os.path.dirname(__file__), 'dist'))
 
@@ -46,14 +46,19 @@ class RedisRateLimiter:
 
 if USE_REDIS:
     import redis
-    redis_client = redis.Redis(
-        host=os.environ.get('REDIS_HOST', 'localhost'),
-        port=int(os.environ.get('REDIS_PORT', 6379)),
-        username=os.environ.get('REDIS_USERNAME', 'default'),
-        password=os.environ.get('REDIS_PASSWORD', ''),
-        db=0,
-        ssl=True
-    )
+    from redis import ConnectionPool
+       # Create a connection pool
+    pool = ConnectionPool(
+            host=os.environ.get('REDIS_HOST', 'localhost'),
+            port=int(os.environ.get('REDIS_PORT', 6379)),
+            username=os.environ.get('REDIS_USERNAME', 'default'),
+            password=os.environ.get('REDIS_PASSWORD', ''),
+            db=0,
+            connection_class=redis.SSLConnection,
+            max_connections=200  # Adjust this number based on your needs
+            )
+
+    redis_client = redis.Redis(connection_pool=pool)
 
     print("connected to redis")
 
@@ -95,7 +100,7 @@ if USE_REDIS:
         return int(redis_client.get('count') or 0)
     
     def emit_toggle(index, new_value):
-        redis_client.publish('bit_toggle_channel', json.dumps({'index': index, 'value': new_value}))
+        redis_client.publish('bit_toggle_channel', json.dumps([index, new_value]))
 
     one_second_limiter = RedisRateLimiter(redis_client, limit=7, window=1)
     fifteen_second_limiter = RedisRateLimiter(redis_client, limit=80, window=15)
@@ -118,16 +123,11 @@ if USE_REDIS:
         # Use the current date as part of the key
         key = f"checkbox_logs:{datetime.now().strftime('%Y-%m-%d')}"
 
-        # Push the log entry to the list
-        redis_client.rpush(key, log_entry)
+        pipeline = redis_client.pipeline()
+        pipeline.rpush(key, log_entry)
+        pipeline.ltrim(key, 0, MAX_LOGS_PER_DAY - 1)
+        pipeline.execute()
 
-        # Check if we've exceeded the max number of logs
-        if redis_client.llen(key) > MAX_LOGS_PER_DAY:
-            # Remove oldest log entry
-            redis_client.lpop(key)
-
-            # You might want to emit an alert here
-            print("WARNING: Max logs reached for today")
 else:
     # In-memory storage
     in_memory_storage = {'bitset': bitarray('0' * TOTAL_CHECKBOXES), 'count': 0}
@@ -147,7 +147,8 @@ else:
         return in_memory_storage['count']
     
     def emit_toggle(index, new_value):
-        socketio.emit('bit_toggled', {'index': index, 'value': new_value})
+        print("HERE")
+        socketio.emit('batched_bit_toggles', [[index,new_value]])
     
     limiters = []
 
@@ -203,14 +204,14 @@ def serve(path):
         return send_file(os.path.join(app.static_folder, 'index.html'))
     
 
-@socketio.on('connect')
-def handle_connect():
-    forwarded_for = request.headers.get('X-Forwarded-For') or request.remote_addr
-    if forwarded_for and allow_connection(forwarded_for):
-        return True
-    else:
-        print(f"Rate limiting connection for {forwarded_for}")
-        return False
+#@socketio.on('connect')
+#def handle_connect():
+    #forwarded_for = request.headers.get('X-Forwarded-For') or request.remote_addr
+    #if forwarded_for and allow_connection(forwarded_for):
+        #return True
+    #else:
+        #print(f"Rate limiting connection for {forwarded_for}")
+        #return False
 
 def emit_state_updates():
     scheduler.add_job(emit_full_state, 'interval', seconds=30)
@@ -221,6 +222,7 @@ emit_state_updates()
 def handle_redis_messages():
     if USE_REDIS:
         message_count = 0
+        updates = []
         while True:
             message = pubsub.get_message(timeout=0.01)
             if message is None:
@@ -230,16 +232,16 @@ def handle_redis_messages():
             if message['type'] == 'message':
                 try:
                     data = json.loads(message['data'])
-                    socketio.emit('bit_toggled', data)
+                    updates.append(data)
                     message_count += 1
                 except json.JSONDecodeError:
                     print(f"Failed to decode message: {message['data']}")
 
-            # Process up to 100 messages per job execution to prevent long-running jobs
-            if message_count >= 100:
+            if message_count >= 200:
                 break
 
         if message_count > 0:
+            socketio.emit('batched_bit_toggles', updates)
             print(f"Processed {message_count} messages")
 
 def setup_redis_listener():

@@ -19,7 +19,7 @@ const useForceUpdate = ({ bitSetRef, setCheckCount }) => {
   const [, setTick] = useState(0);
   return useCallback(() => {
     setTick((tick) => tick + 1);
-    setCheckCount(bitSetRef.current.count());
+    setCheckCount(bitSetRef?.current?.count() || 0);
   }, [bitSetRef, setCheckCount]);
 };
 
@@ -135,6 +135,41 @@ const scoreString = ({ selfCheckboxState, allChecked }) => {
   );
 };
 
+const MailIcon = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="1em"
+    height="1em"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+    <polyline points="22,6 12,13 2,6"></polyline>
+  </svg>
+);
+
+const DollarIcon = () => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="1em"
+    height="1em"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    class="feather feather-dollar-sign"
+  >
+    <line x1="12" y1="1" x2="12" y2="23"></line>
+    <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+  </svg>
+);
+
 const App = () => {
   const { width, height } = useWindowSize();
   const gridRef = useRef();
@@ -210,6 +245,14 @@ const App = () => {
     socket.on("bit_toggled", (data) => {
       console.log(`Received bit toggle event: ${JSON.stringify(data)}`);
       bitSetRef.current?.set(data.index, data.value);
+      forceUpdate();
+    });
+
+    socket.on("batched_bit_toggles", (updates) => {
+      console.log(`Received batch: ${updates.length} updates`);
+      updates.forEach(([index, value]) => {
+        bitSetRef.current?.set(index, value);
+      });
       forceUpdate();
     });
 
@@ -348,7 +391,13 @@ const App = () => {
     <Wrapper>
       <Heading style={{ "--width": columnCount * CHECKBOX_SIZE + "px" }}>
         <SiteHead>
-          a website by <a href="https://eieio.games">eieio</a>
+          a website by <a href="https://eieio.games">eieio</a>{" "}
+          <MailIconLink href="https://eieio.substack.com/">
+            {MailIcon()}
+          </MailIconLink>
+          <DollarIconLink href="https://buymeacoffee.com/eieio">
+            {DollarIcon()}
+          </DollarIconLink>
         </SiteHead>
         <Title>One Million Checkboxes</Title>
         <CountHead style={{ "--opacity": isLoading ? 0 : 1 }}>
@@ -434,6 +483,36 @@ const Heading = styled.div`
       ". sub sub ."
       "site site count count"
       "you you you you";
+  }
+`;
+
+const MailIconLink = styled.a`
+  display: inline-flex;
+  vertical-align: middle;
+  // align-items: center;
+  color: var(--blue);
+  text-decoration: none;
+  border-radius: 5px;
+  transition: background-color 0.3s ease;
+  margin-left: 1px;
+
+  &:hover {
+    color: var(--dark);
+  }
+`;
+
+const DollarIconLink = styled.a`
+  display: inline-flex;
+  vertical-align: middle;
+  // align-items: center;
+  color: var(--green) !important;
+  text-decoration: none;
+  border-radius: 5px;
+  transition: background-color 0.3s ease;
+  margin-left: 2px;
+
+  &:hover {
+    color: var(--dark) !important;
   }
 `;
 
