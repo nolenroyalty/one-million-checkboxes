@@ -15,6 +15,7 @@ from datetime import datetime
 MAX_LOGS_PER_DAY = 300_000_000
 TOTAL_CHECKBOXES = 1_000_000
 REACT_BUILD_DIRECTORY = os.path.abspath(os.path.join(os.path.dirname(__file__), 'dist'))
+REDIS_REPLICA_IP="10.108.0.13"
 
 app = Flask(__name__, static_folder=REACT_BUILD_DIRECTORY)
 CORS(app)
@@ -55,12 +56,25 @@ if USE_REDIS:
             password=os.environ.get('REDIS_PASSWORD', ''),
             db=0,
             connection_class=redis.SSLConnection,
-            max_connections=200  # Adjust this number based on your needs
+            max_connections=350  # Adjust this number based on your needs
             )
+    
+    replica_pool = ConnectionPool(
+            host=REDIS_REPLICA_IP,
+            port=int(os.environ.get('REDIS_PORT', 6379)),
+            username=os.environ.get('REDIS_USERNAME', 'default'),
+            password=os.environ.get('REDIS_PASSWORD', ''),
+            db=0,
+            connection_class=redis.SSLConnection,
+            max_connections=350  # Adjust this number based on your needs
+            )
+            
 
     redis_client = redis.Redis(connection_pool=pool)
-
     print("connected to redis")
+    replica_client = redis.Redis(connection_pool=replica_pool)
+    print("connected to replica")
+
 
     def initialize_redis():
         if not redis_client.exists('truncated_bitset'):
@@ -70,7 +84,7 @@ if USE_REDIS:
 
     initialize_redis()
 
-    pubsub = redis_client.pubsub(ignore_subscribe_messages=True)
+    pubsub = replica_client.pubsub(ignore_subscribe_messages=True)
     pubsub.subscribe('bit_toggle_channel')
 
     # Lua script for atomic bit setting and count update
@@ -83,21 +97,62 @@ if USE_REDIS:
     redis.call('setbit', key, index, value)
     redis.call('incrby', 'count', diff)
     return diff"""
-    set_bit_sha = redis_client.script_load(set_bit_script)
+
+    new_set_bit_script="""
+    local key = KEYS[1]
+    local count_key = KEYS[2]
+    local index = tonumber(ARGV[1])
+    local max_count = tonumber(ARGV[2])
+
+    local current_count = tonumber(redis.call('get', count_key) or "0")
+    if current_count >= max_count then
+        return {current_count, redis.call('getbit', key, index), 0}  -- Return current count, current bit value, and 0 to indicate no change
+    end
+
+    local current_bit = redis.call('getbit', key, index)
+    local new_bit = 1 - current_bit  -- Toggle the bit
+    local diff = new_bit - current_bit
+
+    if diff > 0 and current_count + diff > max_count then
+        return {current_count, current_bit, 0}  -- Return current count, current bit value, and 0 to indicate no change
+    end
+
+    redis.call('setbit', key, index, new_bit)
+    local new_count = current_count + diff
+    redis.call('set', count_key, new_count)
+
+    return {new_bit, diff}  -- Return new count, new bit value, and the change (1, 0, or -1)"""
+
+    # set_bit_sha = redis_client.script_load(set_bit_script)
+    new_set_bit_sha = redis_client.script_load(new_set_bit_script)
 
     def get_bit(index):
         return bool(redis_client.getbit('truncated_bitset', index))
     
     def set_bit(index, value):
-        diff = redis_client.evalsha(set_bit_sha, 1, 'truncated_bitset', index, int(value))
+        [_count, diff] = redis_client.evalsha(new_set_bit_sha, 1, 'truncated_bitset', index, int(value))
         return diff != 0
+
+    def _toggle_internal(index):
+        result = redis_client.evalsha(
+            new_set_bit_sha, 
+            2,  # number of keys
+            'truncated_bitset',  # key for bitset
+            'count',  # key for count
+            index,  # index to toggle
+            TOTAL_CHECKBOXES  # max count
+        )
+        new_bit_value, diff = result
+        if diff == 0:
+            return [False, None]
+        return [True, new_bit_value]
     
     def get_full_state():
-        raw_data = redis_client.get("truncated_bitset")
+        raw_data = replica_client.get("truncated_bitset")
         return base64.b64encode(raw_data).decode('utf-8')
 
     def get_count():
-        return int(redis_client.get('count') or 0)
+        return int(replica_client.get('count') or 0)
     
     def emit_toggle(index, new_value):
         redis_client.publish('bit_toggle_channel', json.dumps([index, new_value]))
@@ -137,8 +192,25 @@ else:
 
     def set_bit(index, value):
         current = in_memory_storage['bitset'][index]
+        count = in_memory_storage['count']
+        if count >= TOTAL_CHECKBOXES:
+            return False
+        
         in_memory_storage['bitset'][index] = value
         in_memory_storage['count'] += value - current
+        return True
+    
+    def _toggle_internal(index):
+        print("here")
+        current = in_memory_storage['bitset'][index]
+        count = in_memory_storage['count']
+        if count >= TOTAL_CHECKBOXES:
+            return [False, None]
+        
+        new_value = not current
+        in_memory_storage['bitset'][index] = new_value
+        in_memory_storage['count'] += 1 if new_value else -1
+        return [True, new_value]
 
     def get_full_state():
         return base64.b64encode(in_memory_storage['bitset'].tobytes()).decode('utf-8')
@@ -180,21 +252,17 @@ def handle_toggle(data):
     if not allow_toggle(request.sid):
         print(f"Rate limiting toggle request for {request.sid}")
         return False
-    count = get_count()
-    if count >= 1_000_000:
-        # print("DISABLED TOGGLE EXCEEDED MAX")
-        return False
     
     index = data['index']
     if index >= TOTAL_CHECKBOXES:
         return False
-    current_value = get_bit(index)
-    new_value = not current_value
-    set_bit(index, new_value)
-    forwarded_for = request.headers.get('X-Forwarded-For') or "UNKNOWN_IP"
-    log_checkbox_toggle(forwarded_for, index, new_value)
     
-    emit_toggle(index, new_value)
+    did_toggle, new_value = _toggle_internal(index)
+
+    if did_toggle != 0:
+        forwarded_for = request.headers.get('X-Forwarded-For') or "UNKNOWN_IP"
+        log_checkbox_toggle(forwarded_for, index, new_value)
+        emit_toggle(index, new_value)
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
@@ -258,7 +326,7 @@ def handle_redis_messages():
 def setup_redis_listener():
     if USE_REDIS:
         print("Redis listener job added to scheduler")
-        scheduler.add_job(handle_redis_messages, 'interval', seconds=0.1)
+        scheduler.add_job(handle_redis_messages, 'interval', seconds=0.3)
 
 setup_redis_listener()
 

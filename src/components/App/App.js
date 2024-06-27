@@ -143,9 +143,9 @@ const MailIcon = () => (
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
-    stroke-width="2.5"
-    stroke-linecap="round"
-    stroke-linejoin="round"
+    strokeWidth="2.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
   >
     <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
     <polyline points="22,6 12,13 2,6"></polyline>
@@ -160,10 +160,9 @@ const DollarIcon = () => (
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
-    stroke-width="2.5"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-    class="feather feather-dollar-sign"
+    strokeWidth="2.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
   >
     <line x1="12" y1="1" x2="12" y2="23"></line>
     <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>

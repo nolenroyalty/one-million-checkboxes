@@ -18,39 +18,40 @@ LOCAL_CLEANUPPY="./cleanup_old_logs.py"
 # Rsync options
 RSYNC_OPTS="-avz --delete"
 
-#for REMOTE_HOST in bak.onemil 2bak.onemil 3bak.onemil 4bak.onemil 5bak.onemil 6bak.onemil 7bak.onemil 8bak.onemil
-for REMOTE_HOST in onemil
+for REMOTE_HOST in bak.onemil 2bak.onemil 3bak.onemil 4bak.onemil 5bak.onemil 6bak.onemil 7bak.onemil 8bak.onemil
+#for REMOTE_HOST in onemil
+#for REMOTE_HOST in 2bak.onemil
 do
     echo $REMOTE_HOST
 
     #REMOTE_HOST="8bak.onemil"
 
-     Sync dist directory
-    echo "Syncing dist directory..."
-    rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$LOCAL_DIST/" "root@$REMOTE_HOST:$WWW_DIR/"
-    ssh -i $SSH_KEY root@${REMOTE_HOST} -- chown -R www-data:www-data ${WWW_DIR}
-    ssh -i $SSH_KEY root@${REMOTE_HOST} -- chmod -R 755 ${WWW_DIR}
+    ### Sync dist directory
+    #echo "Syncing dist directory..."
+    #rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$LOCAL_DIST/" "root@$REMOTE_HOST:$WWW_DIR/"
+    #ssh -i $SSH_KEY root@${REMOTE_HOST} -- chown -R www-data:www-data ${WWW_DIR}
+    #ssh -i $SSH_KEY root@${REMOTE_HOST} -- chmod -R 755 ${WWW_DIR}
 
-    #Sync server.py
-    #echo "Syncing server.py..."
-    #rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$LOCAL_SERVER" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
+    ###Sync server.py
+    echo "Syncing server.py..."
+    rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$LOCAL_SERVER" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
 
-    ## Sync cleanup.sh
-    #echo "Syncing cleanup.sh..."
-    #rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$LOCAL_CLEANUPSH" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
+    ### Sync cleanup.sh
+    echo "Syncing cleanup.sh..."
+    rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$LOCAL_CLEANUPSH" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
 
-    ## Sync cleanup_old_logs.py
-    #echo "Syncing cleanup_old_logs.py..."
-    #rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$LOCAL_CLEANUPPY" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
+    #### Sync cleanup_old_logs.py
+    echo "Syncing cleanup_old_logs.py..."
+    rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$LOCAL_CLEANUPPY" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
 
-    ## Sync start_gunicorn.sh
-    #echo "Syncing start_gunicorn.sh..."
-    #rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$LOCAL_GUNICORN" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
+    #### Sync start_gunicorn.sh
+    echo "Syncing start_gunicorn.sh..."
+    rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$LOCAL_GUNICORN" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
 
-    ## Sync requirements.txt
-    #echo "Syncing requirements.txt..."
-    #rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$LOCAL_REQUIREMENTS" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
+    #### Sync requirements.txt
+    echo "Syncing requirements.txt..."
+    rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$LOCAL_REQUIREMENTS" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
 
-    #echo "Sync completed!"
-    #echo "Deployment finished!"
+    echo "Sync completed!"
+    echo "Deployment finished!"
 done
