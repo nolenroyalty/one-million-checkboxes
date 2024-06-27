@@ -409,7 +409,7 @@ const App = () => {
         </SiteHead>
         <Title>One Million Checkboxes</Title>
         <CountHead style={{ "--opacity": isLoading ? 0 : 1 }}>
-          {checkCount} boxes are ✅
+          {Math.min(1000000, checkCount)} boxes are ✅
         </CountHead>
         {allChecked ? (
           <Explanation>🎉 we checked every box! 🎉</Explanation>
