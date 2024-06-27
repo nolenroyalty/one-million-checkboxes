@@ -221,7 +221,7 @@ const App = () => {
           base64String: data.full_state,
           count: data.count,
         });
-        if (data.count === 1000000) {
+        if (data.count >= 1000000) {
           setDisabled(true);
           setAllChecked(true);
         }
@@ -271,7 +271,7 @@ const App = () => {
         base64String: data.full_state,
         count: data.count,
       });
-      if (data.count === 1000000) {
+      if (data.count >= 1000000) {
         setDisabled(true);
         setAllChecked(true);
         clearTimeout(clickTimeout.current);
@@ -314,7 +314,7 @@ const App = () => {
           bitSetRef.current?.toggle(index);
           const count = bitSetRef.current.count();
           setCheckCount(count);
-          if (count === 1000000) {
+          if (count >= 1000000) {
             setDisabled(true);
             setAllChecked(true);
           }

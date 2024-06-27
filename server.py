@@ -12,7 +12,7 @@ import json
 import time
 from datetime import datetime
 
-MAX_LOGS_PER_DAY = 200_000_000
+MAX_LOGS_PER_DAY = 300_000_000
 TOTAL_CHECKBOXES = 1_000_000
 REACT_BUILD_DIRECTORY = os.path.abspath(os.path.join(os.path.dirname(__file__), 'dist'))
 
@@ -63,8 +63,8 @@ if USE_REDIS:
     print("connected to redis")
 
     def initialize_redis():
-        if not redis_client.exists('bitset'):
-            redis_client.set('bitset', b'\x00' * (TOTAL_CHECKBOXES // 8))
+        if not redis_client.exists('truncated_bitset'):
+            redis_client.set('truncated_bitset', b'\x00' * (TOTAL_CHECKBOXES // 8))
         if not redis_client.exists('count'):
             redis_client.set('count', '0')
 
@@ -86,14 +86,14 @@ if USE_REDIS:
     set_bit_sha = redis_client.script_load(set_bit_script)
 
     def get_bit(index):
-        return bool(redis_client.getbit('bitset', index))
+        return bool(redis_client.getbit('truncated_bitset', index))
     
     def set_bit(index, value):
-        diff = redis_client.evalsha(set_bit_sha, 1, 'bitset', index, int(value))
+        diff = redis_client.evalsha(set_bit_sha, 1, 'truncated_bitset', index, int(value))
         return diff != 0
     
     def get_full_state():
-        raw_data = redis_client.get("bitset")
+        raw_data = redis_client.get("truncated_bitset")
         return base64.b64encode(raw_data).decode('utf-8')
 
     def get_count():
@@ -186,6 +186,8 @@ def handle_toggle(data):
         return False
     
     index = data['index']
+    if index >= TOTAL_CHECKBOXES:
+        return False
     current_value = get_bit(index)
     new_value = not current_value
     set_bit(index, new_value)
@@ -265,4 +267,5 @@ if __name__ == '__main__':
     set_bit(1, True)
     set_bit(100, True)
     set_bit(101, True)
+
     socketio.run(app, host="0.0.0.0", port=5001)
