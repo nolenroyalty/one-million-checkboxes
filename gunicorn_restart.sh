@@ -1,7 +1,9 @@
 #!/bin/bash
 
 # jitter
-sleep $((RANDOM % 300)) 
+x=$((RANDOM % 300)) 
+echo "sleeping for $x"
+sleep "$x"
 
 count_running_servers() {
     ps aux | grep gunicorn | grep -oP 'bind \K0\.0\.0\.0:\d+' | sort | uniq | wc -l
