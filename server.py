@@ -11,10 +11,13 @@ import base64
 import json
 import time
 from datetime import datetime
+from contextlib import contextmanager
+
 
 MAX_LOGS_PER_DAY = 300_000_000
 TOTAL_CHECKBOXES = 1_000_000
 REACT_BUILD_DIRECTORY = os.path.abspath(os.path.join(os.path.dirname(__file__), 'dist'))
+# I found this by portscanning my own VPC because the DNS record wouldn't work lmfao
 REDIS_REPLICA_IP="10.108.0.13"
 
 app = Flask(__name__, static_folder=REACT_BUILD_DIRECTORY)
@@ -26,24 +29,25 @@ scheduler = BackgroundScheduler()
 USE_REDIS = os.environ.get('USE_REDIS', 'false').lower() == 'true'
 
 class RedisRateLimiter:
-    def __init__(self, redis_client, limit, window):
-        self.redis = redis_client
+    def __init__(self, pool, limit, window):
+        self.pool = pool
         self.limit = limit
         self.window = window
 
     def is_allowed(self, key: str) -> bool:
-        pipe = self.redis.pipeline()
-        now = int(time.time())
-        key = f'rate_limit:{key}:{self.window}'  # Include window in the key
-        
-        pipe.zadd(key, {now: now})
-        pipe.zremrangebyscore(key, 0, now - self.window)
-        pipe.zcard(key)
-        pipe.expire(key, self.window)
-        
-        _, _, count, _ = pipe.execute()
+        with get_redis_connection(self.pool) as redis_client:
+            pipe = redis_client.pipeline()
+            now = int(time.time())
+            key = f'rate_limit:{key}:{self.window}'  # Include window in the key
+            
+            pipe.zadd(key, {now: now})
+            pipe.zremrangebyscore(key, 0, now - self.window)
+            pipe.zcard(key)
+            pipe.expire(key, self.window)
+            
+            _, _, count, _ = pipe.execute()
 
-        return count <= self.limit
+            return count <= self.limit
 
 if USE_REDIS:
     import redis
@@ -56,7 +60,7 @@ if USE_REDIS:
             password=os.environ.get('REDIS_PASSWORD', ''),
             db=0,
             connection_class=redis.SSLConnection,
-            max_connections=350  # Adjust this number based on your needs
+            max_connections=425  # Adjust this number based on your needs
             )
     
     replica_pool = ConnectionPool(
@@ -66,25 +70,34 @@ if USE_REDIS:
             password=os.environ.get('REDIS_PASSWORD', ''),
             db=0,
             connection_class=redis.SSLConnection,
-            max_connections=350  # Adjust this number based on your needs
+            max_connections=425  # Adjust this number based on your needs
             )
-            
+    
+    @contextmanager
+    def get_redis_connection(pool):
+        connection = redis.Redis(connection_pool=pool)
+        try:
+            yield connection
+        finally:
+            connection.close()
 
-    redis_client = redis.Redis(connection_pool=pool)
-    print("connected to redis")
-    replica_client = redis.Redis(connection_pool=replica_pool)
-    print("connected to replica")
+    # redis_client = redis.Redis(connection_pool=pool)
+    # print("connected to redis")
+    # replica_client = redis.Redis(connection_pool=replica_pool)
+    # print("connected to replica")
 
 
     def initialize_redis():
-        if not redis_client.exists('truncated_bitset'):
-            redis_client.set('truncated_bitset', b'\x00' * (TOTAL_CHECKBOXES // 8))
-        if not redis_client.exists('count'):
-            redis_client.set('count', '0')
+        with get_redis_connection(pool) as redis_client:
+            if not redis_client.exists('truncated_bitset'):
+                redis_client.set('truncated_bitset', b'\x00' * (TOTAL_CHECKBOXES // 8))
+            if not redis_client.exists('count'):
+                redis_client.set('count', '0')
 
     initialize_redis()
 
-    pubsub = replica_client.pubsub(ignore_subscribe_messages=True)
+    # pubsub = replica_client.pubsub(ignore_subscribe_messages=True)
+    pubsub = redis.Redis(connection_pool=replica_pool).pubsub(ignore_subscribe_messages=True)
     pubsub.subscribe('bit_toggle_channel')
 
     # Lua script for atomic bit setting and count update
@@ -124,44 +137,52 @@ if USE_REDIS:
     return {new_bit, diff}  -- Return new count, new bit value, and the change (1, 0, or -1)"""
 
     # set_bit_sha = redis_client.script_load(set_bit_script)
-    new_set_bit_sha = redis_client.script_load(new_set_bit_script)
+    # new_set_bit_sha = redis_client.script_load(new_set_bit_script)
+    with get_redis_connection(pool) as redis_client:
+        new_set_bit_sha = redis_client.script_load(new_set_bit_script)
 
     def get_bit(index):
-        return bool(redis_client.getbit('truncated_bitset', index))
+        with get_redis_connection(pool) as redis_client:
+            return bool(redis_client.getbit('truncated_bitset', index))
     
     def set_bit(index, value):
-        [_count, diff] = redis_client.evalsha(new_set_bit_sha, 1, 'truncated_bitset', index, int(value))
-        return diff != 0
+        with get_redis_connection(pool) as redis_client:
+            [_count, diff] = redis_client.evalsha(new_set_bit_sha, 1, 'truncated_bitset', index, int(value))
+            return diff != 0
 
     def _toggle_internal(index):
-        result = redis_client.evalsha(
-            new_set_bit_sha, 
-            2,  # number of keys
-            'truncated_bitset',  # key for bitset
-            'count',  # key for count
-            index,  # index to toggle
-            TOTAL_CHECKBOXES  # max count
-        )
-        new_bit_value, diff = result
-        if diff == 0:
-            return [False, None]
-        return [True, new_bit_value]
+        with get_redis_connection(pool) as redis_client:
+            result = redis_client.evalsha(
+                new_set_bit_sha, 
+                2,  # number of keys
+                'truncated_bitset',  # key for bitset
+                'count',  # key for count
+                index,  # index to toggle
+                TOTAL_CHECKBOXES  # max count
+            )
+            new_bit_value, diff = result
+            if diff == 0:
+                return [False, None]
+            return [True, new_bit_value]
     
     def get_full_state():
-        raw_data = replica_client.get("truncated_bitset")
-        return base64.b64encode(raw_data).decode('utf-8')
+        with get_redis_connection(replica_pool) as replica_client:
+            raw_data = replica_client.get("truncated_bitset")
+            return base64.b64encode(raw_data).decode('utf-8')
 
     def get_count():
-        return int(replica_client.get('count') or 0)
+        with get_redis_connection(replica_pool) as replica_client:
+            return int(replica_client.get('count') or 0)
     
     def emit_toggle(index, new_value):
-        redis_client.publish('bit_toggle_channel', json.dumps([index, new_value]))
+        with get_redis_connection(pool) as redis_client:
+            redis_client.publish('bit_toggle_channel', json.dumps([index, new_value]))
 
-    one_second_limiter = RedisRateLimiter(redis_client, limit=7, window=1)
-    fifteen_second_limiter = RedisRateLimiter(redis_client, limit=80, window=15)
-    sixty_second_limiter = RedisRateLimiter(redis_client, limit=240, window=60)
+    one_second_limiter = RedisRateLimiter(pool, limit=7, window=1)
+    fifteen_second_limiter = RedisRateLimiter(pool, limit=80, window=15)
+    sixty_second_limiter = RedisRateLimiter(pool, limit=240, window=60)
     
-    connection_limiter = RedisRateLimiter(redis_client, limit=20, window=15)
+    connection_limiter = RedisRateLimiter(pool, limit=20, window=15)
 
     limiters = [one_second_limiter, fifteen_second_limiter, sixty_second_limiter]
 
@@ -177,11 +198,11 @@ if USE_REDIS:
 
         # Use the current date as part of the key
         key = f"checkbox_logs:{datetime.now().strftime('%Y-%m-%d')}"
-
-        pipeline = redis_client.pipeline()
-        pipeline.rpush(key, log_entry)
-        pipeline.ltrim(key, 0, MAX_LOGS_PER_DAY - 1)
-        pipeline.execute()
+        with get_redis_connection(pool) as redis_client:
+            pipeline = redis_client.pipeline()
+            pipeline.rpush(key, log_entry)
+            pipeline.ltrim(key, 0, MAX_LOGS_PER_DAY - 1)
+            pipeline.execute()
 
 else:
     # In-memory storage
