@@ -14,7 +14,7 @@ from datetime import datetime
 from contextlib import contextmanager
 
 
-MAX_LOGS_PER_DAY = 300_000_000
+MAX_LOGS_PER_DAY = 400_000_000
 TOTAL_CHECKBOXES = 1_000_000
 REACT_BUILD_DIRECTORY = os.path.abspath(os.path.join(os.path.dirname(__file__), 'dist'))
 # I found this by portscanning my own VPC because the DNS record wouldn't work lmfao
