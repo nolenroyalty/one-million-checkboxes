@@ -187,6 +187,7 @@ const App = () => {
   const [disabled, setDisabled] = useState(false);
   const [allChecked, setAllChecked] = useState(false);
   const clickTimeout = React.useRef();
+  const lastUpdateTimestamp = useRef(0);
 
   const [selfCheckboxState, setSelfCheckboxState] = useState(() => {
     const fromLocal = localStorage.getItem("selfCheckboxState");
@@ -241,51 +242,65 @@ const App = () => {
     socketRef.current = socket;
 
     // Listen for bit toggle events
-    socket.on("bit_toggled", (data) => {
-      console.log(`Received bit toggle event: ${JSON.stringify(data)}`);
-      bitSetRef.current?.set(data.index, data.value);
-      forceUpdate();
-    });
+    // No longer used
+    // socket.on("bit_toggled", (data) => {
+    //   console.log(`Received bit toggle event: ${JSON.stringify(data)}`);
+    //   bitSetRef.current?.set(data.index, data.value);
+    //   forceUpdate();
+    // });
 
     socket.on("batched_bit_toggles", (updates) => {
       const trueUpdates = updates[0];
       const falseUpdates = updates[1];
-
-      console.log(
-        `Received batch: ${trueUpdates.length} true / ${falseUpdates.length} false`
-      );
-      trueUpdates.forEach((index) => {
-        bitSetRef.current?.set(index, true);
-      });
-      falseUpdates.forEach((index) => {
-        bitSetRef.current?.set(index, false);
-      });
-      forceUpdate();
+      if (updates.length !== 3) {
+        console.log("SKIP");
+      } else {
+        const timestamp = updates[2];
+        if (timestamp < lastUpdateTimestamp.current) {
+          console.log("SKIP OLD UPDATE");
+        } else {
+          console.log(
+            `Received batch: ${trueUpdates.length} true / ${falseUpdates.length} false`
+          );
+          trueUpdates.forEach((index) => {
+            bitSetRef.current?.set(index, true);
+          });
+          falseUpdates.forEach((index) => {
+            bitSetRef.current?.set(index, false);
+          });
+          forceUpdate();
+        }
+      }
     });
 
     // Listen for full state updates
     socket.on("full_state", (data) => {
       console.debug(`Received full state update`);
-      const newBitset = new BitSet({
-        base64String: data.full_state,
-        count: data.count,
-      });
-      if (data.count >= 1000000) {
-        setDisabled(true);
-        setAllChecked(true);
-        clearTimeout(clickTimeout.current);
-      } else {
-        if (!clickTimeout.current) {
-          setDisabled(false);
+      if (data.timestamp > lastUpdateTimestamp.current) {
+        lastUpdateTimestamp.current = data.timestamp;
+        const newBitset = new BitSet({
+          base64String: data.full_state,
+          count: data.count,
+        });
+        if (data.count >= 1000000) {
+          setDisabled(true);
+          setAllChecked(true);
+          clearTimeout(clickTimeout.current);
+        } else {
+          if (!clickTimeout.current) {
+            setDisabled(false);
+          }
+          setAllChecked(false);
         }
-        setAllChecked(false);
+        const recentlyChecked = { ...recentlyCheckedClientSide.current };
+        Object.entries(recentlyChecked).forEach(
+          ([index, { value, timeout }]) => {
+            newBitset.set(index, value);
+          }
+        );
+        bitSetRef.current = newBitset;
+        forceUpdate();
       }
-      const recentlyChecked = { ...recentlyCheckedClientSide.current };
-      Object.entries(recentlyChecked).forEach(([index, { value, timeout }]) => {
-        newBitset.set(index, value);
-      });
-      bitSetRef.current = newBitset;
-      forceUpdate();
     });
 
     // Clean up the socket connection when the component unmounts

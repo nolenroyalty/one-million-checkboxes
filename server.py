@@ -119,7 +119,7 @@ if USE_REDIS:
 
     local current_count = tonumber(redis.call('get', count_key) or "0")
     if current_count >= max_count then
-        return {current_count, redis.call('getbit', key, index), 0}  -- Return current count, current bit value, and 0 to indicate no change
+        return {redis.call('getbit', key, index), 0}  -- Return current count, current bit value, and 0 to indicate no change
     end
 
     local current_bit = redis.call('getbit', key, index)
@@ -127,14 +127,14 @@ if USE_REDIS:
     local diff = new_bit - current_bit
 
     if diff > 0 and current_count + diff > max_count then
-        return {current_count, current_bit, 0}  -- Return current count, current bit value, and 0 to indicate no change
+        return { current_bit, 0}  -- Return current count, current bit value, and 0 to indicate no change
     end
 
     redis.call('setbit', key, index, new_bit)
     local new_count = current_count + diff
     redis.call('set', count_key, new_count)
 
-    return {new_bit, diff}  -- Return new count, new bit value, and the change (1, 0, or -1)"""
+    return {new_bit, diff}  -- new bit value, and the change (1, 0, or -1)"""
 
     # set_bit_sha = redis_client.script_load(set_bit_script)
     # new_set_bit_sha = redis_client.script_load(new_set_bit_script)
@@ -174,9 +174,9 @@ if USE_REDIS:
         with get_redis_connection(replica_pool) as replica_client:
             return int(replica_client.get('count') or 0)
     
-    def emit_toggle(index, new_value):
+    def emit_toggle(index, new_value, timestamp):
         with get_redis_connection(pool) as redis_client:
-            redis_client.publish('bit_toggle_channel', json.dumps([index, new_value]))
+            redis_client.publish('bit_toggle_channel', json.dumps([index, new_value, timestamp]))
 
     one_second_limiter = RedisRateLimiter(pool, limit=7, window=1)
     fifteen_second_limiter = RedisRateLimiter(pool, limit=80, window=15)
@@ -239,8 +239,8 @@ else:
     def get_count():
         return in_memory_storage['count']
     
-    def emit_toggle(index, new_value):
-        update = [[index], []] if new_value else [[], [index]]
+    def emit_toggle(index, new_value, timestamp):
+        update = [[index], [], timestamp] if new_value else [[], [index], timestamp]
         socketio.emit('batched_bit_toggles', update)
     
     limiters = []
@@ -257,7 +257,8 @@ else:
 def state_snapshot():
     full_state = get_full_state()
     count = get_count()
-    return {'full_state': full_state, 'count': count}
+    timestamp = int(time.time() * 1000)  # Current time in milliseconds
+    return {'full_state': full_state, 'count': count, "timestamp": timestamp}
 
 @app.route('/api/initial-state')
 def get_initial_state():
@@ -279,11 +280,12 @@ def handle_toggle(data):
         return False
     
     did_toggle, new_value = _toggle_internal(index)
+    timestamp = int(time.time() * 1000)  # Current time in milliseconds
 
     if did_toggle != 0:
         forwarded_for = request.headers.get('X-Forwarded-For') or "UNKNOWN_IP"
         log_checkbox_toggle(forwarded_for, index, new_value)
-        emit_toggle(index, new_value)
+        emit_toggle(index, new_value, timestamp)
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
@@ -327,19 +329,24 @@ def handle_redis_messages():
                 except json.JSONDecodeError:
                     print(f"Failed to decode message: {message['data']}")
 
-            if message_count >= 200:
+            if message_count >= 400:
                 break
 
         if message_count > 0:
             true_updates = []
             false_updates = []
+            max_timestamp = 0
             for update in updates:
-                index, value = update
+                if len(update) != 3: # backwards compatibility
+                    continue
+                else:
+                    index, value, timestamp = update
+                    max_timestamp = max(max_timestamp, timestamp)
                 if value:
                     true_updates.append(index)
                 else:
                     false_updates.append(index)
-            to_broadcast = [true_updates, false_updates]
+            to_broadcast = [true_updates, false_updates, max_timestamp]
 
             socketio.emit('batched_bit_toggles', to_broadcast)
             # print(f"Processed {message_count} messages")
@@ -347,7 +354,7 @@ def handle_redis_messages():
 def setup_redis_listener():
     if USE_REDIS:
         print("Redis listener job added to scheduler")
-        scheduler.add_job(handle_redis_messages, 'interval', seconds=0.3)
+        scheduler.add_job(handle_redis_messages, 'interval', seconds=0.2)
 
 setup_redis_listener()
 
