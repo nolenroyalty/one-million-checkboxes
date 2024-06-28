@@ -329,7 +329,7 @@ def handle_redis_messages():
                 except json.JSONDecodeError:
                     print(f"Failed to decode message: {message['data']}")
 
-            if message_count >= 400:
+            if message_count >= 800:
                 break
 
         if message_count > 0:
