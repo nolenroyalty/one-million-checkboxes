@@ -408,23 +408,61 @@ const App = () => {
   };
 
   const youHaveChecked = scoreString({ selfCheckboxState, allChecked });
+  const cappedCheckCount = Math.min(1000000, checkCount).toLocaleString();
 
   return (
     <Wrapper>
       <Heading style={{ "--width": columnCount * CHECKBOX_SIZE + "px" }}>
-        <SiteHead>
-          a website by <a href="https://eieio.games">eieio</a>{" "}
-          <MailIconLink href="https://eieio.substack.com/">
-            {MailIcon()}
-          </MailIconLink>
-          <DollarIconLink href="https://buymeacoffee.com/eieio">
-            {DollarIcon()}
-          </DollarIconLink>
+        <SiteHead
+          style={{ "--mobile-display": "none", "--desktop-display": "flex" }}
+        >
+          <span>
+            a website by <a href="https://eieio.games">eieio</a>{" "}
+          </span>
+          <DonoLinks>
+            <MailIconLink href="https://eieio.substack.com/">
+              {MailIcon()}
+            </MailIconLink>
+            <DollarIconLink href="https://buymeacoffee.com/eieio">
+              {DollarIcon()}
+            </DollarIconLink>
+          </DonoLinks>
         </SiteHead>
         <Title>One Million Checkboxes</Title>
-        <CountHead style={{ "--opacity": isLoading ? 0 : 1 }}>
-          {Math.min(1000000, checkCount)} boxes are ✅
+        <CountHead
+          style={{
+            "--opacity": isLoading ? 0 : 1,
+            "--mobile-display": "none",
+            "--desktop-display": "block",
+          }}
+        >
+          {cappedCheckCount} boxes are ✅
         </CountHead>
+        <SiteCountMobile>
+          <SiteHead
+            style={{ "--mobile-display": "flex", "--desktop-display": "none" }}
+          >
+            <span>
+              a website by <a href="https://eieio.games">eieio</a>{" "}
+            </span>
+            <DonoLinks>
+              <MailIconLink href="https://eieio.substack.com/">
+                {MailIcon()}
+              </MailIconLink>
+              <DollarIconLink href="https://buymeacoffee.com/eieio">
+                {DollarIcon()}
+              </DollarIconLink>
+            </DonoLinks>
+          </SiteHead>
+          <CountHead
+            style={{
+              "--opacity": isLoading ? 0 : 1,
+            }}
+          >
+            {cappedCheckCount} boxes are ✅
+          </CountHead>
+        </SiteCountMobile>
+
         {allChecked ? (
           <Explanation>🎉 we checked every box! 🎉</Explanation>
         ) : (
@@ -503,20 +541,24 @@ const Heading = styled.div`
     grid-template-areas:
       "title title title title"
       ". sub sub ."
-      "site site count count"
+      "sitecount sitecount sitecount sitecount"
       "you you you you";
+  }
+`;
+
+const DonoLinks = styled.span`
+  @media (max-width: 550px) {
+    margin-top: -6px;
   }
 `;
 
 const MailIconLink = styled.a`
   display: inline-flex;
   vertical-align: middle;
-  // align-items: center;
   color: var(--blue);
   text-decoration: none;
   border-radius: 5px;
   transition: background-color 0.3s ease;
-  margin-left: 1px;
 
   &:hover {
     color: var(--dark);
@@ -526,7 +568,6 @@ const MailIconLink = styled.a`
 const DollarIconLink = styled.a`
   display: inline-flex;
   vertical-align: middle;
-  // align-items: center;
   color: var(--green) !important;
   text-decoration: none;
   border-radius: 5px;
@@ -614,6 +655,23 @@ const YouHaveChecked = styled.div`
 const SiteHead = styled(SubHead)`
   text-align: left;
   grid-area: site;
+  /* display: flex; */
+  gap: 6px;
+  align-items: baseline;
+
+  display: var(--desktop-display);
+  @media (max-width: 850px) {
+    display: var(--mobile-display);
+  }
+  @media (max-width: 550px) {
+    flex-direction: column;
+    gap: 0px;
+    width: fit-content;
+    flex-grow: 0;
+    flex-basis: fit-content;
+
+    /* flex: 0; */
+  }
 `;
 
 const CountHead = styled(SubHead)`
@@ -621,6 +679,21 @@ const CountHead = styled(SubHead)`
   grid-area: count;
   opacity: var(--opacity);
   transition: opacity 0.5s;
+  display: var(--desktop-display);
+  @media (max-width: 850px) {
+    display: var(--mobile-display);
+    flex-grow: 1;
+  }
+`;
+
+const SiteCountMobile = styled.div`
+  grid-area: sitecount;
+  display: flex;
+  justify-content: space-between;
+  display: none;
+  @media (max-width: 850px) {
+    display: flex;
+  }
 `;
 
 const Wrapper = styled.div`
