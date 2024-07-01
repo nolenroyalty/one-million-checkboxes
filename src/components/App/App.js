@@ -109,7 +109,7 @@ const scoreString = ({ selfCheckboxState, allChecked }) => {
     .map((color) => {
       const count =
         selfCheckboxState[
-          `total${color.charAt(0).toUpperCase()}${color.slice(1)}`
+        `total${color.charAt(0).toUpperCase()}${color.slice(1)}`
         ];
       if (count !== 0) {
         return [color, count];
@@ -253,7 +253,7 @@ const App = () => {
       const trueUpdates = updates[0];
       const falseUpdates = updates[1];
       if (updates.length !== 3) {
-        console.log("SKIP");
+        console.log(`updates: ${updates}`);
       } else {
         const timestamp = updates[2];
         if (timestamp < lastUpdateTimestamp.current) {
