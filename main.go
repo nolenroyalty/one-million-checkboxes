@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"math"
+	"math/rand"
 	"net"
 	"os"
 	"runtime/debug"
@@ -250,18 +252,17 @@ func resetAbuseCounters() {
 	})
 }
 
-func detectAbuse(ip string) {
+func detectAbuse(ip string) bool {
 	count, _ := abuseMap.LoadOrCompute(ip, func() *atomic.Int64 {
 		return new(atomic.Int64)
 	})
 	count.Add(1)
 	if count.Load() < *maxAbuseRequests {
-		return
+		return false
 	}
-	sleepTime := *abusePenalityTimeout * time.Duration(count.Load())
-	slog.With("ip", ip, "count", count.Load(), "sleep_time", sleepTime).
-		Info("Suspected abuse. Putting them in time-out")
-	time.Sleep(sleepTime)
+	thousands := float64(count.Load()) / 1000
+	chance := math.Pow(0.5, thousands)
+	return chance > rand.Float64()
 }
 
 func main() {
@@ -290,15 +291,20 @@ func main() {
 				"ip",
 				ip,
 			)
-			detectAbuse(ip)
-
 			client.On("disconnect", try(func(a ...any) {
 				activeConns.Add(-1)
-				log.Info("leaving")
+				log.Debug("leaving")
 			}))
+			if detectAbuse(ip) {
+				log.Info("rejecting connection from suspected abuse ip")
+				client.Disconnect(true)
+			}
+
 			client.On("toggle_bit", try(func(a ...any) {
-				// TODO: implement rate limiting
-				detectAbuse(ip)
+				if detectAbuse(ip) {
+					log.Info("rejecting toggle from suspected abuse ip")
+					return
+				}
 				data := a[0].(map[string]any)
 				index := int(data["index"].(float64))
 				tlg := log.WithGroup("toggle_bit").With("index", index)
