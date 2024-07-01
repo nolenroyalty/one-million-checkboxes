@@ -109,7 +109,7 @@ const scoreString = ({ selfCheckboxState, allChecked }) => {
     .map((color) => {
       const count =
         selfCheckboxState[
-          `total${color.charAt(0).toUpperCase()}${color.slice(1)}`
+        `total${color.charAt(0).toUpperCase()}${color.slice(1)}`
         ];
       if (count !== 0) {
         return [color, count];
