@@ -262,6 +262,8 @@ func resetAbuseCounters() {
 				tmp -= (*maxAbuseRequests * *mercyRatio)
 				if tmp < 0 {
 					zeros = append(zeros, key)
+					value.Store(0)
+					return true
 				}
 				value.Store(tmp)
 				return true
@@ -276,7 +278,9 @@ func resetAbuseCounters() {
 
 func detectAbuse(ip string) bool {
 	count, _ := abuseMap.LoadOrCompute(ip, func() *atomic.Int64 {
-		return new(atomic.Int64)
+		v := new(atomic.Int64)
+		v.Store(0)
+		return v
 	})
 	count.Add(1)
 	if count.Load() < *maxAbuseRequests {
@@ -319,12 +323,13 @@ func main() {
 			}))
 			if detectAbuse(ip) {
 				log.Info("rejecting connection from suspected abuse ip")
-				client.Disconnect(true)
+				client.Conn().Close(true)
 				return
 			}
 
 			client.On("toggle_bit", try(func(a ...any) {
 				if detectAbuse(ip) {
+					client.Conn().Close(true)
 					log.Info("rejecting toggle from suspected abuse ip")
 					return
 				}
