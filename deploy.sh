@@ -36,6 +36,9 @@ do
     echo "syncing new server binary..."
     rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$CHECKBOX_BIN" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
 
+    #Sync server.py
+    echo "Syncing server.py..."
+    rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$LOCAL_SERVER" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
 
     # ##Sync server.py
     # echo "Syncing server.py..."

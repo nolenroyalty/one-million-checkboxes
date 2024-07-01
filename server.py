@@ -275,7 +275,11 @@ def handle_toggle(data):
         print(f"Rate limiting toggle request for {request.sid}")
         return False
     
-    index = data['index']
+    try:
+        index = int(data['index'])
+    except:
+        return False
+
     if index >= TOTAL_CHECKBOXES:
         return False
     
