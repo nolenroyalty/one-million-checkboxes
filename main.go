@@ -13,6 +13,7 @@ import (
 	"math"
 	"math/rand"
 	"net"
+	"net/http"
 	"os"
 	"runtime/debug"
 	"sync/atomic"
@@ -155,7 +156,7 @@ func logToggles(logs []*toggleLogEntry) {
 	pipeline.LTrim(background, key, 0, int64(MAX_LOGS_PER_DAY-1))
 	_, err := pipeline.Exec(background)
 	if err != nil {
-		slog.Error("", "err", err)
+		slog.Error("error during redis log rotation", "err", err)
 	}
 }
 func catch(f func(), cleanup ...func()) {
@@ -202,12 +203,21 @@ func handleLogs() {
 					continue
 				}
 			}
+			abuseCount := 0
+			activeClientCount := 0
+			abuseMap.Range(func(key string, value *atomic.Int64) bool {
+				abuseCount += int(value.Load())
+				activeClientCount += 1
+				return true
+			})
 			slog.Info(
 				"submitting logs",
 				"count",
 				len(buff),
 				"clients",
-				activeConns.Load(),
+				activeClientCount,
+				"totalAbuse",
+				abuseCount,
 			)
 			logToggles(buff)
 			buff = buff[:0]
@@ -230,8 +240,6 @@ var (
 		time.Minute,
 		"reset the abuse pentaly after this time",
 	)
-	abusePenalityTimeout = flag.Duration("abuse-timeout",
-		time.Microsecond*10, "how long naughty people go into timeout")
 )
 
 func socketIP(s *socket.Socket) string {
@@ -247,16 +255,21 @@ func socketIP(s *socket.Socket) string {
 func resetAbuseCounters() {
 	tryForever(func() {
 		t := time.NewTicker(*abuseResetInterval)
+		zeros := []string{}
 		for range t.C {
 			abuseMap.Range(func(key string, value *atomic.Int64) bool {
 				tmp := value.Load()
 				tmp -= (*maxAbuseRequests * *mercyRatio)
 				if tmp < 0 {
-					tmp = 0
+					zeros = append(zeros, key)
 				}
 				value.Store(tmp)
 				return true
 			})
+		}
+
+		for _, name := range zeros {
+			abuseMap.Delete(name)
 		}
 	})
 }
@@ -307,6 +320,7 @@ func main() {
 			if detectAbuse(ip) {
 				log.Info("rejecting connection from suspected abuse ip")
 				client.Disconnect(true)
+				return
 			}
 
 			client.On("toggle_bit", try(func(a ...any) {
@@ -425,6 +439,18 @@ func main() {
 			}
 		})
 	}()
+	wss := ws.ServeHandler(nil)
+	gin.WrapF(func(w http.ResponseWriter, r *http.Request) {
+		forwarded := r.Header.Get("X-Forwarded-For")
+		if detectAbuse(forwarded) {
+			slog.With("ip", forwarded).
+				Info("Rejecting http reqeust from suspected abuse ip")
+			w.WriteHeader(400)
+			return
+		}
+
+		wss.ServeHTTP(w, r)
+	})
 
 	h := gin.WrapH(ws.ServeHandler(nil))
 	r.GET("/socket.io/", h)
