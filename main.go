@@ -47,11 +47,12 @@ var (
 	)
 	maxLogInterval  = flag.Duration("max-log-interval", time.Second*5, "")
 	maxLogBatchSize = flag.Int("max-log-batch", 200, "")
+	mercyRatio      = flag.Int64(
+		"mercy-ratio",
+		3,
+		"how quickly we should forgive the bad guys",
+	)
 )
-
-type unit struct{}
-
-type contextkey string
 
 //go:embed dist
 var distFolder embed.FS
@@ -247,7 +248,15 @@ func resetAbuseCounters() {
 	tryForever(func() {
 		t := time.NewTicker(*abuseResetInterval)
 		for range t.C {
-			abuseMap = xsync.NewMapOf[*atomic.Int64]()
+			abuseMap.Range(func(key string, value *atomic.Int64) bool {
+				tmp := value.Load()
+				tmp -= (*maxAbuseRequests * *mercyRatio)
+				if tmp < 0 {
+					tmp = 0
+				}
+				value.Store(tmp)
+				return true
+			})
 		}
 	})
 }

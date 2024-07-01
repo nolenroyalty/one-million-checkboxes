@@ -1,0 +1,2 @@
+export BACKEND_HOSTS="bak.onemil 2bak.onemil 3bak.onemil 4bak.onemil 5bak.onemil 6bak.onemil 7bak.onemil 8bak.onemil"
+echo $BACKEND_HOSTS
