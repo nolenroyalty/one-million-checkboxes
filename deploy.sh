@@ -35,16 +35,16 @@ do
     #rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$LOCAL_DIST/" "root@$REMOTE_HOST:$WWW_DIR/"
     #ssh -i $SSH_KEY root@${REMOTE_HOST} -- chown -R www-data:www-data ${WWW_DIR}
     #ssh -i $SSH_KEY root@${REMOTE_HOST} -- chmod -R 755 ${WWW_DIR}
-    echo "syncing new server binary..."
+    #echo "syncing new server binary..."
 
     ssh root@$REMOTE_HOST "systemctl stop $GO_SYS_UNIT"
     rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$CHECKBOX_BIN" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
     ssh root@$REMOTE_HOST "systemctl start $GO_SYS_UNIT"
 
 
-    #Sync server.py
-    echo "Syncing server.py..."
-    rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$LOCAL_SERVER" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
+    ##Sync server.py
+    #echo "Syncing server.py..."
+    #rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$LOCAL_SERVER" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
 
     # ##Sync server.py
     # echo "Syncing server.py..."

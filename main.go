@@ -243,13 +243,38 @@ var (
 )
 
 func socketIP(s *socket.Socket) string {
+	// Check Cloudflare-specific header first
+	log := slog.With("socketIP")
+	NOLEN_IP := s.Request().Request().Header.Get("NOLEN-IP")
+	
+	cfIP := s.Request().Request().Header.Get("CF-Connecting-IP")
+	
+	if NOLEN_IP != "" {
+		// check if it begins with "10."
+		if len(NOLEN_IP) < 3 || NOLEN_IP[:3] == "10." {
+			log.Info("SKIP NOLEN IP ITS PRIVATE");
+		} else {
+			log.Info("Using NOLEN IP", "ip", NOLEN_IP)
+			return NOLEN_IP;
+		}
+	}
+
+	
+	if cfIP != "" {
+		log.Info("Using Cloudflare IP", "ip", cfIP)
+		return cfIP
+	}
 	forwarded := s.Request().Request().Header.Get("X-Forwarded-For")
 	if forwarded != "" {
+		log.Info("Using forwarded IP", "ip", forwarded)
 		return forwarded
 
 	}
+
 	addr, _ := net.ResolveTCPAddr("tcp", s.Conn().RemoteAddress())
-	return addr.IP.String()
+	z := addr.IP.String()
+	log.Info("Using remote IP", "ip", z)
+	return z;
 }
 
 func resetAbuseCounters() {
