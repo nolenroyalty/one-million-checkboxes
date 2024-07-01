@@ -32,7 +32,7 @@ do
     #ssh -i $SSH_KEY root@${REMOTE_HOST} -- chown -R www-data:www-data ${WWW_DIR}
     #ssh -i $SSH_KEY root@${REMOTE_HOST} -- chmod -R 755 ${WWW_DIR}
 
-    ##Sync server.py
+    #Sync server.py
     echo "Syncing server.py..."
     rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$LOCAL_SERVER" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
 

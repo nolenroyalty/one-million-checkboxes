@@ -253,7 +253,7 @@ const App = () => {
       const trueUpdates = updates[0];
       const falseUpdates = updates[1];
       if (updates.length !== 3) {
-        console.log("SKIP");
+        console.log(`SKIP: ${updates}`);
       } else {
         const timestamp = updates[2];
         if (timestamp < lastUpdateTimestamp.current) {
