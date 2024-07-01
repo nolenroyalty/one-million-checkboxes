@@ -33,6 +33,18 @@ var (
 	port                 = flag.Int("port", 5001, "http port to listen to")
 	logChannel           = make(chan *toggleLogEntry, 20)
 	activeConns          atomic.Int64
+	REDIS_SECONDARY_IP   = flag.String(
+		"redis-secondary",
+		"10.108.0.15",
+		"",
+	)
+	forceStateSnapshot = flag.Duration(
+		"force-snapshot-interval",
+		time.Second*10,
+		"",
+	)
+	maxLogInterval  = flag.Duration("max-log-interval", time.Second*5, "")
+	maxLogBatchSize = flag.Int("max-log-batch", 200, "")
 )
 
 type unit struct{}
@@ -43,14 +55,8 @@ type contextkey string
 var distFolder embed.FS
 
 const (
-	MAX_LOGS_PER_DAY              = 400_000_000
-	TOTAL_CHECKBOXES              = 1_000_000
-	REDIS_SECONDARY_IP            = "10.108.0.15"
-	REDIS_PRIMARY      contextkey = "redis_primary"
-	REDIS_SECONDARY    contextkey = "redis_secondary"
-	forceStateSnapshot            = time.Second * 10
-	maxLogInterval                = time.Second * 5
-	maxLogBatchSize               = 200
+	MAX_LOGS_PER_DAY = 400_000_000
+	TOTAL_CHECKBOXES = 1_000_000
 )
 
 func initRedis() {
@@ -179,7 +185,7 @@ func try(f func(args ...any)) func(...any) {
 
 func handleLogs() {
 	tryForever(func() {
-		t := time.NewTicker(maxLogInterval)
+		t := time.NewTicker(*maxLogInterval)
 		var buff []*toggleLogEntry
 		for {
 			select {
@@ -189,7 +195,7 @@ func handleLogs() {
 				}
 			case msg := <-logChannel:
 				buff = append(buff, msg)
-				if len(buff) < maxLogBatchSize {
+				if len(buff) < *maxLogBatchSize {
 					continue
 				}
 			}
@@ -319,13 +325,9 @@ func main() {
 				nbv, diff := nv[0], nv[1]
 				if diff != 0 {
 					tlg.Debug("toggled bit")
-					addr, _ := net.ResolveTCPAddr(
-						"tcp",
-						client.Request().Request().RemoteAddr,
-					)
 
 					logChannel <- &toggleLogEntry{
-						ip:    addr.IP.String(),
+						ip:    ip,
 						index: index,
 						state: nbv > 0,
 					}
@@ -347,7 +349,7 @@ func main() {
 
 	go func() {
 		tryForever(func() {
-			t := time.NewTicker(forceStateSnapshot)
+			t := time.NewTicker(*forceStateSnapshot)
 			log := slog.With("scope", "forceStateSnapshot")
 			for range t.C {
 				log.Debug("starting snapshot send")
@@ -423,7 +425,7 @@ func main() {
 		fmt.Sprintf(":%d", *port+2),
 	)
 	r.Run(
-		fmt.Sprintf(":%d", *port+4),
+		fmt.Sprintf(":%d", *port+3),
 	)
 }
 
@@ -458,7 +460,7 @@ func primaryRedis() (*redis.Client, error) {
 }
 func replicaRedis() (*redis.Client, error) {
 	return redisClient(
-		REDIS_SECONDARY_IP,
+		*REDIS_SECONDARY_IP,
 		envOr("REDIS_PORT", "6379"),
 		envOr("REDIS_USERNAME", "default"),
 		envOr("REDIS_PASSWORD", ""),
