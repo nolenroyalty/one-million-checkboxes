@@ -43,7 +43,7 @@ var (
 	)
 	forceStateSnapshot = flag.Duration(
 		"force-snapshot-interval",
-		time.Second*10,
+		time.Second*35,
 		"",
 	)
 	maxLogInterval  = flag.Duration("max-log-interval", time.Second*5, "")
@@ -311,7 +311,8 @@ func detectAbuse(ip string) bool {
 	if count.Load() < *maxAbuseRequests {
 		return false
 	}
-	thousands := float64(count.Load()) / 1000
+	// reducing this a bit to trim load a little more
+	thousands := float64(count.Load()) / 750
 	chance := math.Pow(0.5, thousands)
 	return chance > rand.Float64()
 }
