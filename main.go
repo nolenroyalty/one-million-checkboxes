@@ -18,7 +18,7 @@ import (
 	"runtime/debug"
 	"sync/atomic"
 	"time"
-
+	
 	"github.com/gin-contrib/static"
 	"github.com/redis/go-redis/v9"
 	"github.com/zishang520/socket.io/v2/socket"
@@ -43,14 +43,14 @@ var (
 	)
 	forceStateSnapshot = flag.Duration(
 		"force-snapshot-interval",
-		time.Second*35,
+		time.Second*50,
 		"",
 	)
 	maxLogInterval  = flag.Duration("max-log-interval", time.Second*5, "")
 	maxLogBatchSize = flag.Int("max-log-batch", 200, "")
 	mercyRatio      = flag.Int64(
 		"mercy-ratio",
-		3,
+		2,
 		"how quickly we should forgive the bad guys",
 	)
 )
@@ -241,8 +241,27 @@ var (
 		"reset the abuse pentaly after this time",
 	)
 )
+func groupIPv6(ip string) (string, bool) {
+	parsedIP := net.ParseIP(ip)
+	if parsedIP == nil || parsedIP.To4() != nil {
+		return ip, false // Return as-is if it's not a valid IPv6 address
+	}
 
-func socketIP(s *socket.Socket) string {
+	ipv6Addr := parsedIP.To16()
+	if ipv6Addr == nil {
+		return ip, false // Shouldn't happen, but just in case
+	}
+
+	// Keep the first 48 bits (6 bytes) and zero out the rest
+	// maybe 64?
+	for i := 8; i < 16; i++ {
+		ipv6Addr[i] = 0
+	}
+
+	return ipv6Addr.String(), true
+}
+
+func socketIP(s *socket.Socket) (string, bool) {
 	// Check Cloudflare-specific header first
 	log := slog.With("socketIP")
 	NOLEN_IP := s.Request().Request().Header.Get("NOLEN-IP")
@@ -255,26 +274,26 @@ func socketIP(s *socket.Socket) string {
 			log.Info("SKIP NOLEN IP ITS PRIVATE");
 		} else {
 			log.Info("Using NOLEN IP", "ip", NOLEN_IP)
-			return NOLEN_IP;
+			return groupIPv6(NOLEN_IP);
 		}
 	}
 
 	
 	if cfIP != "" {
 		log.Info("Using Cloudflare IP", "ip", cfIP)
-		return cfIP
+		return groupIPv6(cfIP);
 	}
 	forwarded := s.Request().Request().Header.Get("X-Forwarded-For")
 	if forwarded != "" {
 		log.Info("Using forwarded IP", "ip", forwarded)
-		return forwarded
+		return groupIPv6(forwarded);
 
 	}
 
 	addr, _ := net.ResolveTCPAddr("tcp", s.Conn().RemoteAddress())
 	z := addr.IP.String()
 	log.Info("Using remote IP", "ip", z)
-	return z;
+	return groupIPv6(z);
 }
 
 func resetAbuseCounters() {
@@ -301,13 +320,17 @@ func resetAbuseCounters() {
 	})
 }
 
-func detectAbuse(ip string) bool {
+func detectAbuse(ip string, isIPV6 bool) bool {
 	count, _ := abuseMap.LoadOrCompute(ip, func() *atomic.Int64 {
 		v := new(atomic.Int64)
 		v.Store(0)
 		return v
 	})
-	count.Add(1)
+	if isIPV6 {
+		count.Add(12)
+	} else {
+		count.Add(1)
+	}
 	if count.Load() < *maxAbuseRequests {
 		return false
 	}
@@ -335,7 +358,7 @@ func main() {
 	ws.On("connection", func(a ...any) {
 		client := a[0].(*socket.Socket)
 		catch(func() {
-			ip := socketIP(client)
+			ip, isIPV6 := socketIP(client)
 			activeConns.Add(1)
 			log := slog.With(
 				"client",
@@ -343,18 +366,22 @@ func main() {
 				"ip",
 				ip,
 			)
+			if (isIPV6) {
+				// add socket to "ipv6" room
+				client.Join("ipv6")
+			}
 			client.On("disconnect", try(func(a ...any) {
 				activeConns.Add(-1)
 				log.Debug("leaving")
 			}))
-			if detectAbuse(ip) {
+			if detectAbuse(ip, isIPV6) {
 				log.Info("rejecting connection from suspected abuse ip")
 				client.Conn().Close(true)
 				return
 			}
 
 			client.On("toggle_bit", try(func(a ...any) {
-				if detectAbuse(ip) {
+				if detectAbuse(ip, isIPV6) {
 					client.Conn().Close(true)
 					log.Info("rejecting toggle from suspected abuse ip")
 					return
@@ -362,7 +389,7 @@ func main() {
 				data := a[0].(map[string]any)
 				index := int(data["index"].(float64))
 				tlg := log.WithGroup("toggle_bit").With("index", index)
-				if index >= TOTAL_CHECKBOXES {
+				if (index >= TOTAL_CHECKBOXES || index < 0) {
 					log.Error("attmepted to toggle bad index")
 					return
 				}
@@ -413,7 +440,7 @@ func main() {
 			log := slog.With("scope", "forceStateSnapshot")
 			for range t.C {
 				log.Debug("starting snapshot send")
-				ws.Except().Emit("full_state", getStateSnapshot())
+				ws.Except("ipv6").Emit("full_state", getStateSnapshot())
 				log.Debug("compete snapshot send")
 			}
 		})
@@ -472,8 +499,22 @@ func main() {
 	}()
 	wss := ws.ServeHandler(nil)
 	gin.WrapF(func(w http.ResponseWriter, r *http.Request) {
+		ip := "";
+		NOLEN_IP := r.Header.Get("NOLEN-IP")
+		cfIP := r.Header.Get("CF-Connecting-IP")
 		forwarded := r.Header.Get("X-Forwarded-For")
-		if detectAbuse(forwarded) {
+		if NOLEN_IP != "" {
+			ip = NOLEN_IP;
+		} else if cfIP != "" {
+			ip = cfIP;
+		} else if forwarded != "" {
+			ip = forwarded;
+		} else {
+			ip = "10.0.0.1";
+		}
+		parsedIp, isIPV6 := groupIPv6(ip)
+
+		if detectAbuse(parsedIp, isIPV6) {
 			slog.With("ip", forwarded).
 				Info("Rejecting http reqeust from suspected abuse ip")
 			w.WriteHeader(400)
