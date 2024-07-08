@@ -13,6 +13,7 @@ class BitSet {
     const bitOffset = 7 - (index % 8);
     return (this.bytes[byteIndex] & (1 << bitOffset)) !== 0;
   }
+}
 
   set(index, value) {
     if (typeof value === "boolean") {

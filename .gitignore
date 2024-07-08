@@ -21,4 +21,6 @@ yarn-error.log*
 *.swp
 venv/
 
+checkbox
+
 __pycache__/

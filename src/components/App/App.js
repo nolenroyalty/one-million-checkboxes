@@ -178,6 +178,7 @@ const App = () => {
   const columnCount = Math.floor(gridWidth / CHECKBOX_SIZE);
   const rowCount = Math.ceil(TOTAL_CHECKBOXES / columnCount);
   const bitSetRef = useRef(null);
+  const frozenBitsetRef = useRef(null);
   const [checkCount, setCheckCount] = React.useState(0);
   const forceUpdate = useForceUpdate({ bitSetRef, setCheckCount });
   const [isLoading, setIsLoading] = useState(true);
@@ -221,12 +222,17 @@ const App = () => {
           base64String: data.full_state,
           count: data.count,
         });
+        const frozenBitset = new BitSet({
+          base64String: data.frozen_state,
+          count: data.frozen_count,
+        });
         if (data.count >= 1000000) {
           setDisabled(true);
           setAllChecked(true);
         }
         setCheckCount(data.count);
         bitSetRef.current = bitset;
+        frozenBitsetRef.current = frozenBitset;
         setIsLoading(false);
       } catch (error) {
         console.error("Failed to fetch initial state:", error);
@@ -273,6 +279,20 @@ const App = () => {
       }
     });
 
+    socket.on("batched_frozen_bits", (updates) => {
+      const frozen = updates[0];
+      const timestamp = updates[1];
+      if (timestamp < lastUpdateTimestamp.current) {
+        console.log("SKIP OLD FROZEN UPDATE");
+      } else {
+        console.log(`Received frozen batch: ${frozen.length}`);
+        frozen.forEach((index) => {
+          frozenBitsetRef.current?.set(index, true);
+        });
+        forceUpdate();
+      }
+    });
+
     // Listen for full state updates
     socket.on("full_state", (data) => {
       console.debug(`Received full state update`);
@@ -281,6 +301,10 @@ const App = () => {
         const newBitset = new BitSet({
           base64String: data.full_state,
           count: data.count,
+        });
+        const newFrozenBitset = new BitSet({
+          base64String: data.frozen_state,
+          count: data.frozen_count,
         });
         if (data.count >= 1000000) {
           setDisabled(true);
@@ -295,10 +319,15 @@ const App = () => {
         const recentlyChecked = { ...recentlyCheckedClientSide.current };
         Object.entries(recentlyChecked).forEach(
           ([index, { value, timeout }]) => {
-            newBitset.set(index, value);
+            // skip if in new frozen bitset
+            if (newFrozenBitset.get(index)) {
+            } else {
+              newBitset.set(index, value);
+            }
           }
         );
         bitSetRef.current = newBitset;
+        frozenBitsetRef.current = newFrozenBitset;
         forceUpdate();
       }
     });
@@ -360,7 +389,8 @@ const App = () => {
       const index = rowIndex * columnCount + columnIndex;
       if (index >= TOTAL_CHECKBOXES) return null;
 
-      const isChecked = bitSetRef.current?.get(index);
+      const isFrozen = frozenBitsetRef.current?.get(index);
+      const isChecked = isFrozen || bitSetRef.current?.get(index);
 
       const handleChange = () => {
         toggleBit(index);
@@ -386,7 +416,7 @@ const App = () => {
           style={style}
           isChecked={isChecked}
           handleChange={handleChange}
-          disabled={disabled}
+          disabled={isFrozen || disabled}
         />
       );
     },
@@ -466,7 +496,10 @@ const App = () => {
         {allChecked ? (
           <Explanation>🎉 we checked every box! 🎉</Explanation>
         ) : (
-          <Explanation>(checking a box checks it for everyone!)</Explanation>
+          <Explanation>
+            <p>checking a box checks it for everyone!</p>
+            <p>boxes freeze if they've been checked for a while</p>
+          </Explanation>
         )}
         <YouHaveChecked>{youHaveChecked}</YouHaveChecked>
       </Heading>
