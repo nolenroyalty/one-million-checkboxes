@@ -189,6 +189,10 @@ const App = () => {
   const [allChecked, setAllChecked] = useState(false);
   const clickTimeout = React.useRef();
   const lastUpdateTimestamp = useRef(0);
+  const [singlePlayerMode, setSinglePlayerMode] = useState(false);
+  const doAlert = React.useCallback((s) => {
+    window.alert(s);
+  }, []);
 
   const [selfCheckboxState, setSelfCheckboxState] = useState(() => {
     const fromLocal = localStorage.getItem("selfCheckboxState");
@@ -244,6 +248,10 @@ const App = () => {
   }, []);
 
   useEffect(() => {
+    if (singlePlayerMode) {
+      socketRef.current?.close();
+      return;
+    }
     const socket = io.connect();
     socketRef.current = socket;
 
@@ -336,7 +344,7 @@ const App = () => {
     return () => {
       socket.disconnect();
     };
-  }, [forceUpdate]);
+  }, [forceUpdate, singlePlayerMode]);
 
   const toggleBit = useCallback(
     async (index) => {
@@ -346,7 +354,7 @@ const App = () => {
         clickCounts.current.fifteenSeconds > FIFTEEN_SECOND_THRESHOLD ||
         clickCounts.current.sixtySeconds > SIXTY_SECOND_THRESHOLD
       ) {
-        alert("CHILL LOL");
+        doAlert("CHILL LOL");
         setDisabled(true);
         clickTimeout.current && clearTimeout(clickTimeout.current);
         clickTimeout.current = setTimeout(() => {
@@ -374,14 +382,21 @@ const App = () => {
             }
             return newState;
           });
-          socketRef.current?.emit("toggle_bit", { index });
+          if (singlePlayerMode) {
+            localStorage.setItem(
+              "localBitset",
+              JSON.stringify(bitSetRef.current)
+            );
+          } else {
+            socketRef.current?.emit("toggle_bit", { index });
+          }
         } catch (error) {
           console.error("Failed to toggle bit:", error);
         } finally {
         }
       }
     },
-    [clickCounts, forceUpdate, trackClick]
+    [trackClick, clickCounts, doAlert, forceUpdate, singlePlayerMode]
   );
 
   const Cell = React.useCallback(
@@ -389,8 +404,14 @@ const App = () => {
       const index = rowIndex * columnCount + columnIndex;
       if (index >= TOTAL_CHECKBOXES) return null;
 
-      const isFrozen = frozenBitsetRef.current?.get(index);
-      const isChecked = isFrozen || bitSetRef.current?.get(index);
+      let isFrozen = false;
+      let isChecked = false;
+      if (singlePlayerMode) {
+        isChecked = bitSetRef.current?.get(index);
+      } else {
+        isChecked = isFrozen || bitSetRef.current?.get(index);
+        isFrozen = frozenBitsetRef.current.get(index);
+      }
 
       const handleChange = () => {
         toggleBit(index);
@@ -420,7 +441,7 @@ const App = () => {
         />
       );
     },
-    [columnCount, disabled, toggleBit]
+    [columnCount, disabled, toggleBit, singlePlayerMode]
   );
 
   const handleJumpToCheckbox = (e) => {
@@ -439,6 +460,44 @@ const App = () => {
 
   const youHaveChecked = scoreString({ selfCheckboxState, allChecked });
   const cappedCheckCount = Math.min(1000000, checkCount).toLocaleString();
+
+  const enableSinglePlayer = React.useCallback(
+    (e) => {
+      console.log("enabling single player");
+      e.preventDefault();
+      setSinglePlayerMode(true);
+      socketRef.current?.close();
+      console.log("closed socket");
+      const localJson = localStorage.getItem("localBitset");
+      setDisabled(false);
+
+      if (localJson) {
+        try {
+          const parsed = JSON.parse(localJson);
+          bitSetRef.current = new BitSet(parsed);
+          setCheckCount(bitSetRef.current.count());
+          console.log(
+            `Loaded single player state, count: ${bitSetRef.current.count()}`
+          );
+        } catch (error) {
+          console.error("Failed to load local bitset:", error);
+          const empty = BitSet.makeEmpty();
+          bitSetRef.current = empty;
+          setCheckCount(0);
+          localStorage.setItem("localBitset", JSON.stringify(empty));
+          forceUpdate();
+        }
+        forceUpdate();
+      } else {
+        const empty = BitSet.makeEmpty();
+        bitSetRef.current = empty;
+        setCheckCount(0);
+        localStorage.setItem("localBitset", JSON.stringify(empty));
+        forceUpdate();
+      }
+    },
+    [forceUpdate]
+  );
 
   return (
     <Wrapper>
@@ -496,9 +555,15 @@ const App = () => {
         {allChecked ? (
           <Explanation>
             <p>🎉 we checked every box! 🎉</p>
-            <p>
-              but you can still <PlayAlone>play alone</PlayAlone> if you'd like
-            </p>
+            {singlePlayerMode ? (
+              <p>you're playing alone now</p>
+            ) : (
+              <p>
+                but you can still{" "}
+                <PlayAlone onClick={enableSinglePlayer}>play alone</PlayAlone>{" "}
+                if you'd like
+              </p>
+            )}
           </Explanation>
         ) : (
           <Explanation>

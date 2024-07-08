@@ -34,6 +34,39 @@ class BitSet {
     }
   }
 
+  toJSON() {
+    return {
+      base64String: this._toBase64String(),
+      count: this.checkCount,
+    };
+  }
+
+  static makeEmpty() {
+    const bytes = new Uint8Array(125000);
+    return new BitSet({
+      base64String: BitSet._makeBase64String(bytes),
+      count: 0,
+    });
+  }
+
+  static _makeBase64String(bytes) {
+    let binary = "";
+    // const bytes = new Uint8Array(this.bytes.buffer);
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  }
+
+  _toBase64String() {
+    return BitSet._makeBase64String(this.bytes);
+  }
+
+  static fromJSON({ base64String, count }) {
+    return new BitSet({ base64String, count });
+  }
+
   count() {
     return this.checkCount;
   }
