@@ -108,7 +108,7 @@ func initRedis() {
 	if err := primaryRedisClient.SetNX(
 		background,
 		"sunset_count",
-		"0",
+		"1000000",
 		0,
 	).Err(); err != nil {
 		log.Error("Unable to initialize sunset count %s", err)

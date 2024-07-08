@@ -494,7 +494,12 @@ const App = () => {
         </SiteCountMobile>
 
         {allChecked ? (
-          <Explanation>🎉 we checked every box! 🎉</Explanation>
+          <Explanation>
+            <p>🎉 we checked every box! 🎉</p>
+            <p>
+              but you can still <PlayAlone>play alone</PlayAlone> if you'd like
+            </p>
+          </Explanation>
         ) : (
           <Explanation>
             <p>checking a box checks it for everyone!</p>
@@ -673,6 +678,25 @@ const Explanation = styled.p`
   // italicize
   font-style: italic;
   margin-top: -10px;
+`;
+
+const PlayAlone = styled.button`
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  display: inline;
+  color: var(--blue);
+  text-decoration: underline;
+  text-decoration-style: dashed;
+  // move underline a little further down
+  text-underline-offset: 0.12em;
+  transition: color 0.3s;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--dark);
+  }
 `;
 
 const YouHaveChecked = styled.div`
