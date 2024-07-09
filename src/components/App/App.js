@@ -296,6 +296,7 @@ const App = () => {
         console.log(`Received frozen batch: ${frozen.length}`);
         frozen.forEach((index) => {
           frozenBitsetRef.current?.set(index, true);
+          bitSetRef.current?.set(index, true);
         });
         forceUpdate();
       }
@@ -409,8 +410,8 @@ const App = () => {
       if (singlePlayerMode) {
         isChecked = bitSetRef.current?.get(index);
       } else {
-        isChecked = isFrozen || bitSetRef.current?.get(index);
         isFrozen = frozenBitsetRef.current.get(index);
+        isChecked = isFrozen || bitSetRef.current?.get(index);
       }
 
       const handleChange = () => {

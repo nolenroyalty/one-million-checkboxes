@@ -16,10 +16,10 @@ import (
 	"net/http"
 	"os"
 	"runtime/debug"
+	"strconv"
 	"sync/atomic"
 	"time"
-	"strconv"
-	
+
 	"github.com/gin-contrib/static"
 	"github.com/redis/go-redis/v9"
 	"github.com/zishang520/socket.io/v2/socket"
@@ -64,6 +64,23 @@ const (
 	TOTAL_CHECKBOXES = 1_000_000
 )
 
+func initializeCustomBitset() []byte {
+    // Calculate the sizes
+    emptyFrontBytes := 2
+    fullBytes := 125000 - 3
+    emptyEndBytes := 1
+
+    // Create the byte slice
+    bitset := make([]byte, emptyFrontBytes+fullBytes+emptyEndBytes)
+
+    // Fill the middle part with 1s (0xFF is a byte with all bits set to 1)
+    for i := emptyFrontBytes; i < emptyFrontBytes+fullBytes; i++ {
+        bitset[i] = 0xFF
+    }
+
+    return bitset
+}
+
 func initRedis() {
 	log := slog.With("scope", "redis")
 	if os.Getenv("REDIS_HOST") == "" {
@@ -100,7 +117,7 @@ func initRedis() {
 	if err := primaryRedisClient.SetNX(
 		background,
 		"sunset_bitset",
-		string(make([]byte, TOTAL_CHECKBOXES)),
+		string(initializeCustomBitset()),
 		0,
 	).Err(); err != nil {
 		log.Error("Unable to initialize sunset bitset %s", err)
@@ -108,7 +125,7 @@ func initRedis() {
 	if err := primaryRedisClient.SetNX(
 		background,
 		"sunset_count",
-		"1000000",
+		"999976",
 		0,
 	).Err(); err != nil {
 		log.Error("Unable to initialize sunset count %s", err)
@@ -137,14 +154,16 @@ func initRedis() {
 	).Err(); err != nil {
 		log.Error("Unable to initialize frozen count %s", err)
 	}
+
+	
 }
 
 type stateSnapshot struct {
-	FullState string `json:"full_state"`
+	FullState   string `json:"full_state"`
 	FrozenState string `json:"frozen_state"`
-	Count     int    `json:"count"`
-	FrozenCount int `json:"frozen_count"`
-	Timestamp int    `json:"timestamp"`
+	Count       int    `json:"count"`
+	FrozenCount int    `json:"frozen_count"`
+	Timestamp   int    `json:"timestamp"`
 }
 
 func JSON(v any) string {
@@ -160,11 +179,11 @@ func getStateSnapshot() *stateSnapshot {
 	count, _ := secondaryRedisClient.Get(background, "sunset_count").Int()
 	frozenCount, _ := secondaryRedisClient.Get(background, "frozen_count").Int()
 	return &stateSnapshot{
-		FullState: getFullState(),
+		FullState:   getFullState(),
 		FrozenState: getFrozenState(),
-		Count:     count,
+		Count:       count,
 		FrozenCount: frozenCount,
-		Timestamp: int(time.Now().UnixMilli()),
+		Timestamp:   int(time.Now().UnixMilli()),
 	}
 }
 
@@ -287,6 +306,7 @@ var (
 		"reset the abuse pentaly after this time",
 	)
 )
+
 func groupIPv6(ip string) (string, bool) {
 
 	parsedIP := net.ParseIP(ip)
@@ -312,35 +332,34 @@ func socketIP(s *socket.Socket) (string, bool) {
 	// Check Cloudflare-specific header first
 	log := slog.With("socketIP")
 	NOLEN_IP := s.Request().Request().Header.Get("NOLEN-IP")
-	
+
 	cfIP := s.Request().Request().Header.Get("CF-Connecting-IP")
-	
+
 	if NOLEN_IP != "" {
 		// check if it begins with "10."
 		if len(NOLEN_IP) < 3 || NOLEN_IP[:3] == "10." {
-			log.Info("SKIP NOLEN IP ITS PRIVATE");
+			log.Info("SKIP NOLEN IP ITS PRIVATE")
 		} else {
 			log.Info("Using NOLEN IP", "ip", NOLEN_IP)
-			return groupIPv6(NOLEN_IP);
+			return groupIPv6(NOLEN_IP)
 		}
 	}
 
-	
 	if cfIP != "" {
 		log.Info("Using Cloudflare IP", "ip", cfIP)
-		return groupIPv6(cfIP);
+		return groupIPv6(cfIP)
 	}
 	forwarded := s.Request().Request().Header.Get("X-Forwarded-For")
 	if forwarded != "" {
 		log.Info("Using forwarded IP", "ip", forwarded)
-		return groupIPv6(forwarded);
+		return groupIPv6(forwarded)
 
 	}
 
 	addr, _ := net.ResolveTCPAddr("tcp", s.Conn().RemoteAddress())
 	z := addr.IP.String()
 	log.Info("Using remote IP", "ip", z)
-	return groupIPv6(z);
+	return groupIPv6(z)
 }
 
 func resetAbuseCounters() {
@@ -389,29 +408,29 @@ func detectAbuse(ip string, isIPV6 bool) bool {
 }
 
 func dumpHashsetState(rdb *redis.Client, log *slog.Logger) {
-    result, err := rdb.HGetAll(context.Background(), "last_checked").Result()
-    if err != nil {
-        log.Error("Failed to get hashset state", "error", err)
-        return
-    }
+	result, err := rdb.HGetAll(context.Background(), "last_checked").Result()
+	if err != nil {
+		log.Error("Failed to get hashset state", "error", err)
+		return
+	}
 
-    state := make(map[string]int64)
-    for k, v := range result {
-        timestamp, err := strconv.ParseInt(v, 10, 64)
-        if err != nil {
-            log.Error("Failed to parse timestamp", "key", k, "value", v, "error", err)
-            continue
-        }
-        state[k] = timestamp
-    }
+	state := make(map[string]int64)
+	for k, v := range result {
+		timestamp, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			log.Error("Failed to parse timestamp", "key", k, "value", v, "error", err)
+			continue
+		}
+		state[k] = timestamp
+	}
 
-    stateJSON, err := json.MarshalIndent(state, "", "  ")
-    if err != nil {
-        log.Error("Failed to marshal hashset state", "error", err)
-        return
-    }
+	stateJSON, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		log.Error("Failed to marshal hashset state", "error", err)
+		return
+	}
 
-    log.Info("Current hashset state", "state", string(stateJSON))
+	log.Info("Current hashset state", "state", string(stateJSON))
 }
 
 func main() {
@@ -442,7 +461,7 @@ func main() {
 				"isIPV6",
 				isIPV6,
 			)
-			if (isIPV6) {
+			if isIPV6 {
 				// add socket to "ipv6" room
 				client.Join("ipv6")
 			}
@@ -465,7 +484,7 @@ func main() {
 				data := a[0].(map[string]any)
 				index := int(data["index"].(float64))
 				tlg := log.WithGroup("toggle_bit").With("index", index)
-				if (index >= TOTAL_CHECKBOXES || index < 0) {
+				if index >= TOTAL_CHECKBOXES || index < 0 {
 					log.Error("attmepted to toggle bad index")
 					return
 				}
@@ -635,18 +654,18 @@ func main() {
 
 	wss := ws.ServeHandler(nil)
 	gin.WrapF(func(w http.ResponseWriter, r *http.Request) {
-		ip := "";
+		ip := ""
 		NOLEN_IP := r.Header.Get("NOLEN-IP")
 		cfIP := r.Header.Get("CF-Connecting-IP")
 		forwarded := r.Header.Get("X-Forwarded-For")
 		if NOLEN_IP != "" {
-			ip = NOLEN_IP;
+			ip = NOLEN_IP
 		} else if cfIP != "" {
-			ip = cfIP;
+			ip = cfIP
 		} else if forwarded != "" {
-			ip = forwarded;
+			ip = forwarded
 		} else {
-			ip = "10.0.0.1";
+			ip = "10.0.0.1"
 		}
 		parsedIp, isIPV6 := groupIPv6(ip)
 
@@ -793,7 +812,7 @@ redis.call('set', count_key, new_count)
 
 return {new_bit, diff}  -- new bit value, and the change (1, 0, or -1)`)
 
-frozenSetBitScript = redis.NewScript(`
+	frozenSetBitScript = redis.NewScript(`
 local bitset_key = KEYS[1]
 local count_key = KEYS[2]
 local frozen_bitset_key = KEYS[3]
