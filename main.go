@@ -50,7 +50,7 @@ var (
 	maxLogBatchSize = flag.Int("max-log-batch", 200, "")
 	mercyRatio      = flag.Int64(
 		"mercy-ratio",
-		4,
+		8,
 		"how quickly we should forgive the bad guys",
 	)
 )
@@ -327,7 +327,7 @@ func detectAbuse(ip string, isIPV6 bool) bool {
 		return v
 	})
 	if isIPV6 {
-		count.Add(10)
+		count.Add(1)
 	} else {
 		count.Add(1)
 	}
