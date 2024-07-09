@@ -50,7 +50,7 @@ var (
 	maxLogBatchSize = flag.Int("max-log-batch", 200, "")
 	mercyRatio      = flag.Int64(
 		"mercy-ratio",
-		1,
+		4,
 		"how quickly we should forgive the bad guys",
 	)
 )
@@ -232,7 +232,7 @@ var (
 var (
 	maxAbuseRequests = flag.Int64(
 		"max-abuse-requests",
-		500,
+		1000,
 		"maximum nubmer of requests a client can make before we consider it abuse",
 	)
 	abuseResetInterval = flag.Duration(
@@ -327,7 +327,7 @@ func detectAbuse(ip string, isIPV6 bool) bool {
 		return v
 	})
 	if isIPV6 {
-		count.Add(50)
+		count.Add(10)
 	} else {
 		count.Add(1)
 	}
@@ -335,9 +335,9 @@ func detectAbuse(ip string, isIPV6 bool) bool {
 		return false
 	}
 	// reducing this a bit to trim load a little more
-	thousands := float64(count.Load()) / 750
+	thousands := float64(count.Load()) / 2500
 	chance := math.Pow(0.5, thousands)
-	return chance > rand.Float64()
+	return chance < rand.Float64()
 }
 
 func main() {
