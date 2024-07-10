@@ -287,19 +287,13 @@ const App = () => {
       }
     });
 
-    socket.on("batched_frozen_bits", (updates) => {
-      const frozen = updates[0];
-      const timestamp = updates[1];
-      if (timestamp < lastUpdateTimestamp.current) {
-        console.log("SKIP OLD FROZEN UPDATE");
-      } else {
-        console.log(`Received frozen batch: ${frozen.length}`);
-        frozen.forEach((index) => {
-          frozenBitsetRef.current?.set(index, true);
-          bitSetRef.current?.set(index, true);
-        });
-        forceUpdate();
-      }
+    socket.on("batched_frozen_bits", (frozen) => {
+      console.log(`Received frozen batch: ${frozen.length}`);
+      frozen.forEach((index) => {
+        frozenBitsetRef.current?.set(index, true);
+        bitSetRef.current?.set(index, true);
+      });
+      forceUpdate();
     });
 
     // Listen for full state updates

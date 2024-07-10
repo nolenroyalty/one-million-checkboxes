@@ -509,7 +509,6 @@ func main() {
 				nv, _ := res.Int64Slice()
 				nbv, diff, newly_frozen := nv[0], nv[1], nv[2]
 				log.Info("toggled bit", "index", index, "new_value", nbv, "newly_frozen", newly_frozen)
-				dumpHashsetState(primaryRedisClient, log)
 				if diff != 0 {
 					tlg.Debug("toggled bit")
 
@@ -532,7 +531,7 @@ func main() {
 						background,
 						"frozen_bit_channel",
 						JSON([]any{
-							index, ts,
+							index,
 						}),
 					)
 				}
@@ -622,22 +621,18 @@ func main() {
 
 			messages := subscriber.Channel()
 			frozen := make([]int, 0, maxBatchSize)
-			maxTs := 0
-			tmp := make([]int, 2)
-
+			tmp := make([]int, 1)
 			emitAll := func() {
-				ws.Except().Emit("batched_frozen_bits", []any{frozen, maxTs})
+				ws.Except().Emit("batched_frozen_bits", frozen)
 				log.Debug("emmitting", "frozen", frozen)
 				frozen = make([]int, 0, maxBatchSize)
-				maxTs = 0
 			}
 			for {
 				select {
 				case msg := <-messages:
 					json.Unmarshal([]byte(msg.Payload), &tmp)
-					index, ts := tmp[0], tmp[1]
+					index := tmp[0]
 					frozen = append(frozen, index)
-					maxTs = max(ts, maxTs)
 					if len(frozen) < maxBatchSize {
 						continue
 					}
@@ -712,6 +707,8 @@ func miniClient() *redis.Client {
 	client := redis.NewClient(&redis.Options{
 		Addr: mini.Addr(),
 	})
+	l := slog.With("scope", "miniredis")
+	l.Info("Using miniredis", "addr", mini.Addr(), "port", mini.Port())
 	if ping := client.Ping(background); ping.Err() != nil {
 		log.Fatalf("Unable to estable connection to miniredis %s", ping.Err())
 	}
