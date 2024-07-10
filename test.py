@@ -26,7 +26,7 @@ def get_redis_client():
     if testing:
         pool = ConnectionPool(
                 host="127.0.0.1",
-                port=61003,
+                port=62268,
                 #username=os.environ.get('REDIS_USERNAME', 'default'),
                 #password=os.environ.get('REDIS_PASSWORD', ''),
                 db=0,

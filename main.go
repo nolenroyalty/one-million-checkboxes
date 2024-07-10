@@ -44,14 +44,14 @@ var (
 	)
 	forceStateSnapshot = flag.Duration(
 		"force-snapshot-interval",
-		time.Second*50,
+		time.Second*57,
 		"",
 	)
 	maxLogInterval  = flag.Duration("max-log-interval", time.Second*5, "")
 	maxLogBatchSize = flag.Int("max-log-batch", 200, "")
 	mercyRatio      = flag.Int64(
 		"mercy-ratio",
-		1,
+		2,
 		"how quickly we should forgive the bad guys",
 	)
 )
@@ -117,7 +117,8 @@ func initRedis() {
 	if err := primaryRedisClient.SetNX(
 		background,
 		"sunset_bitset",
-		string(initializeCustomBitset()),
+		// string(initializeCustomBitset()),
+		string(make([]byte, TOTAL_CHECKBOXES)),
 		0,
 	).Err(); err != nil {
 		log.Error("Unable to initialize sunset bitset %s", err)
@@ -125,7 +126,8 @@ func initRedis() {
 	if err := primaryRedisClient.SetNX(
 		background,
 		"sunset_count",
-		"999976",
+		// "999976",
+		"0",
 		0,
 	).Err(); err != nil {
 		log.Error("Unable to initialize sunset count %s", err)
@@ -141,7 +143,7 @@ func initRedis() {
 	if err := primaryRedisClient.SetNX(
 		background,
 		"freeze_time_ms",
-		"1000",
+		"10015",
 		0,
 	).Err(); err != nil {
 		log.Error("Unable to initialize freeze time %s", err)
@@ -154,8 +156,6 @@ func initRedis() {
 	).Err(); err != nil {
 		log.Error("Unable to initialize frozen count %s", err)
 	}
-
-	
 }
 
 type stateSnapshot struct {
@@ -209,7 +209,7 @@ func logToggles(logs []*toggleLogEntry) {
 		}
 
 		entry := fmt.Sprintf(
-			"%s|%s|%d|%s|sunset",
+			"%s|%s|%d|%s|s",
 			now.Format(time.DateTime),
 			l.ip,
 			l.index,
@@ -404,7 +404,7 @@ func detectAbuse(ip string, isIPV6 bool) bool {
 	// reducing this a bit to trim load a little more
 	thousands := float64(count.Load()) / 750
 	chance := math.Pow(0.5, thousands)
-	return chance > rand.Float64()
+	return chance < rand.Float64()
 }
 
 func dumpHashsetState(rdb *redis.Client, log *slog.Logger) {
@@ -508,7 +508,6 @@ func main() {
 				ts := time.Now().UnixMilli()
 				nv, _ := res.Int64Slice()
 				nbv, diff, newly_frozen := nv[0], nv[1], nv[2]
-				log.Info("toggled bit", "index", index, "new_value", nbv, "newly_frozen", newly_frozen)
 				if diff != 0 {
 					tlg.Debug("toggled bit")
 
@@ -835,7 +834,7 @@ local frozen_bit = redis.call('getbit', frozen_bitset_key, index)
 
 -- Check if the box is already frozen
 if frozen_bit == 1 then
-    return {current_bit, 0, 0}  -- Return current bit value, 0 for no change, and 1 to indicate frozen
+    return {current_bit, 0, 0}  -- Return current bit value, 0 for no change, and 0 to indicate not newly frozen
 end
 
 -- If we're at max count, no changes allowed

@@ -282,6 +282,11 @@ const App = () => {
           falseUpdates.forEach((index) => {
             bitSetRef.current?.set(index, false);
           });
+          const count = bitSetRef.current.count();
+          if (count >= 1000000) {
+            setDisabled(true);
+            setAllChecked(true);
+          }
           forceUpdate();
         }
       }
