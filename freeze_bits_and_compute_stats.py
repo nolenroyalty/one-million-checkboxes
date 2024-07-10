@@ -3,8 +3,9 @@ from redis import ConnectionPool
 import time
 import json
 from collections import defaultdict
+import os
 
-testing = True
+testing = not all(os.environ.get(var) for var in ['REDIS_HOST', 'REDIS_PORT', 'REDIS_USERNAME', 'REDIS_PASSWORD'])
 
 atomic_flip_script = """
 local frozen_bitset = KEYS[1]
@@ -35,7 +36,15 @@ def get_redis_client():
                 max_connections=1
                 )
     else:
-        raise Exception("FIXME")
+         pool = ConnectionPool(
+            host=os.environ.get('REDIS_HOST', 'localhost'),
+            port=int(os.environ.get('REDIS_PORT', 6379)),
+            username=os.environ.get('REDIS_USERNAME', 'default'),
+            password=os.environ.get('REDIS_PASSWORD', ''),
+            db=0,
+            connection_class=redis.SSLConnection,
+            max_connections=1
+            )
 
     return redis.Redis(connection_pool=pool)
 
@@ -189,5 +198,7 @@ if __name__ == "__main__":
     </html>
     """
 
-    with open("some-numbers.html", "w") as f:
+    output_path = "/tmp/some-numbers.html" if not testing else "some-numbers.html"
+
+    with open(output_path, "w") as f:
         f.write(html_content)
