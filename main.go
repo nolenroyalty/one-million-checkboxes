@@ -209,7 +209,7 @@ func logToggles(logs []*toggleLogEntry) {
 		}
 
 		entry := fmt.Sprintf(
-			"%s|%s|%d|%s|new",
+			"%s|%s|%d|%s|sunset",
 			now.Format(time.DateTime),
 			l.ip,
 			l.index,
