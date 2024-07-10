@@ -22,5 +22,6 @@ yarn-error.log*
 venv/
 
 checkbox
+some-numbers.html
 
 __pycache__/
