@@ -178,6 +178,7 @@ const App = () => {
   const columnCount = Math.floor(gridWidth / CHECKBOX_SIZE);
   const rowCount = Math.ceil(TOTAL_CHECKBOXES / columnCount);
   const bitSetRef = useRef(null);
+  const frozenBitsetRef = useRef(null);
   const [checkCount, setCheckCount] = React.useState(0);
   const forceUpdate = useForceUpdate({ bitSetRef, setCheckCount });
   const [isLoading, setIsLoading] = useState(true);
@@ -188,6 +189,10 @@ const App = () => {
   const [allChecked, setAllChecked] = useState(false);
   const clickTimeout = React.useRef();
   const lastUpdateTimestamp = useRef(0);
+  const [singlePlayerMode, setSinglePlayerMode] = useState(false);
+  const doAlert = React.useCallback((s) => {
+    window.alert(s);
+  }, []);
 
   const [selfCheckboxState, setSelfCheckboxState] = useState(() => {
     const fromLocal = localStorage.getItem("selfCheckboxState");
@@ -221,12 +226,17 @@ const App = () => {
           base64String: data.full_state,
           count: data.count,
         });
+        const frozenBitset = new BitSet({
+          base64String: data.frozen_state,
+          count: data.frozen_count,
+        });
         if (data.count >= 1000000) {
           setDisabled(true);
           setAllChecked(true);
         }
         setCheckCount(data.count);
         bitSetRef.current = bitset;
+        frozenBitsetRef.current = frozenBitset;
         setIsLoading(false);
       } catch (error) {
         console.error("Failed to fetch initial state:", error);
@@ -238,6 +248,10 @@ const App = () => {
   }, []);
 
   useEffect(() => {
+    if (singlePlayerMode) {
+      socketRef.current?.close();
+      return;
+    }
     const socket = io.connect();
     socketRef.current = socket;
 
@@ -268,9 +282,23 @@ const App = () => {
           falseUpdates.forEach((index) => {
             bitSetRef.current?.set(index, false);
           });
+          const count = bitSetRef.current.count();
+          if (count >= 1000000) {
+            setDisabled(true);
+            setAllChecked(true);
+          }
           forceUpdate();
         }
       }
+    });
+
+    socket.on("batched_frozen_bits", (frozen) => {
+      console.log(`Received frozen batch: ${frozen.length}`);
+      frozen.forEach((index) => {
+        frozenBitsetRef.current?.set(index, true);
+        bitSetRef.current?.set(index, true);
+      });
+      forceUpdate();
     });
 
     // Listen for full state updates
@@ -281,6 +309,10 @@ const App = () => {
         const newBitset = new BitSet({
           base64String: data.full_state,
           count: data.count,
+        });
+        const newFrozenBitset = new BitSet({
+          base64String: data.frozen_state,
+          count: data.frozen_count,
         });
         if (data.count >= 1000000) {
           setDisabled(true);
@@ -295,10 +327,15 @@ const App = () => {
         const recentlyChecked = { ...recentlyCheckedClientSide.current };
         Object.entries(recentlyChecked).forEach(
           ([index, { value, timeout }]) => {
-            newBitset.set(index, value);
+            // skip if in new frozen bitset
+            if (newFrozenBitset.get(index)) {
+            } else {
+              newBitset.set(index, value);
+            }
           }
         );
         bitSetRef.current = newBitset;
+        frozenBitsetRef.current = newFrozenBitset;
         forceUpdate();
       }
     });
@@ -307,7 +344,7 @@ const App = () => {
     return () => {
       socket.disconnect();
     };
-  }, [forceUpdate]);
+  }, [forceUpdate, singlePlayerMode]);
 
   const toggleBit = useCallback(
     async (index) => {
@@ -317,7 +354,7 @@ const App = () => {
         clickCounts.current.fifteenSeconds > FIFTEEN_SECOND_THRESHOLD ||
         clickCounts.current.sixtySeconds > SIXTY_SECOND_THRESHOLD
       ) {
-        alert("CHILL LOL");
+        doAlert("CHILL LOL");
         setDisabled(true);
         clickTimeout.current && clearTimeout(clickTimeout.current);
         clickTimeout.current = setTimeout(() => {
@@ -345,14 +382,21 @@ const App = () => {
             }
             return newState;
           });
-          socketRef.current?.emit("toggle_bit", { index });
+          if (singlePlayerMode) {
+            localStorage.setItem(
+              "localBitset",
+              JSON.stringify(bitSetRef.current)
+            );
+          } else {
+            socketRef.current?.emit("toggle_bit", { index });
+          }
         } catch (error) {
           console.error("Failed to toggle bit:", error);
         } finally {
         }
       }
     },
-    [clickCounts, forceUpdate, trackClick]
+    [trackClick, clickCounts, doAlert, forceUpdate, singlePlayerMode]
   );
 
   const Cell = React.useCallback(
@@ -360,7 +404,14 @@ const App = () => {
       const index = rowIndex * columnCount + columnIndex;
       if (index >= TOTAL_CHECKBOXES) return null;
 
-      const isChecked = bitSetRef.current?.get(index);
+      let isFrozen = false;
+      let isChecked = false;
+      if (singlePlayerMode) {
+        isChecked = bitSetRef.current?.get(index);
+      } else {
+        isFrozen = frozenBitsetRef.current.get(index);
+        isChecked = isFrozen || bitSetRef.current?.get(index);
+      }
 
       const handleChange = () => {
         toggleBit(index);
@@ -386,11 +437,11 @@ const App = () => {
           style={style}
           isChecked={isChecked}
           handleChange={handleChange}
-          disabled={disabled}
+          disabled={isFrozen || disabled}
         />
       );
     },
-    [columnCount, disabled, toggleBit]
+    [columnCount, disabled, toggleBit, singlePlayerMode]
   );
 
   const handleJumpToCheckbox = (e) => {
@@ -409,6 +460,44 @@ const App = () => {
 
   const youHaveChecked = scoreString({ selfCheckboxState, allChecked });
   const cappedCheckCount = Math.min(1000000, checkCount).toLocaleString();
+
+  const enableSinglePlayer = React.useCallback(
+    (e) => {
+      console.log("enabling single player");
+      e.preventDefault();
+      setSinglePlayerMode(true);
+      socketRef.current?.close();
+      console.log("closed socket");
+      const localJson = localStorage.getItem("localBitset");
+      setDisabled(false);
+
+      if (localJson) {
+        try {
+          const parsed = JSON.parse(localJson);
+          bitSetRef.current = new BitSet(parsed);
+          setCheckCount(bitSetRef.current.count());
+          console.log(
+            `Loaded single player state, count: ${bitSetRef.current.count()}`
+          );
+        } catch (error) {
+          console.error("Failed to load local bitset:", error);
+          const empty = BitSet.makeEmpty();
+          bitSetRef.current = empty;
+          setCheckCount(0);
+          localStorage.setItem("localBitset", JSON.stringify(empty));
+          forceUpdate();
+        }
+        forceUpdate();
+      } else {
+        const empty = BitSet.makeEmpty();
+        bitSetRef.current = empty;
+        setCheckCount(0);
+        localStorage.setItem("localBitset", JSON.stringify(empty));
+        forceUpdate();
+      }
+    },
+    [forceUpdate]
+  );
 
   return (
     <Wrapper>
@@ -464,9 +553,23 @@ const App = () => {
         </SiteCountMobile>
 
         {allChecked ? (
-          <Explanation>🎉 we checked every box! 🎉</Explanation>
+          <Explanation>
+            <p>🎉 we checked every box! 🎉</p>
+            {singlePlayerMode ? (
+              <p>you're playing alone now</p>
+            ) : (
+              <p>
+                but you can still{" "}
+                <PlayAlone onClick={enableSinglePlayer}>play alone</PlayAlone>{" "}
+                if you'd like
+              </p>
+            )}
+          </Explanation>
         ) : (
-          <Explanation>(checking a box checks it for everyone!)</Explanation>
+          <Explanation>
+            <p>checking a box checks it for everyone!</p>
+            <p>boxes freeze if they've been checked for a while</p>
+          </Explanation>
         )}
         <YouHaveChecked>{youHaveChecked}</YouHaveChecked>
       </Heading>
@@ -640,6 +743,25 @@ const Explanation = styled.p`
   // italicize
   font-style: italic;
   margin-top: -10px;
+`;
+
+const PlayAlone = styled.button`
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: none;
+  display: inline;
+  color: var(--blue);
+  text-decoration: underline;
+  text-decoration-style: dashed;
+  // move underline a little further down
+  text-underline-offset: 0.12em;
+  transition: color 0.3s;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--dark);
+  }
 `;
 
 const YouHaveChecked = styled.div`

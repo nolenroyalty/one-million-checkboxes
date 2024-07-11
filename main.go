@@ -16,9 +16,10 @@ import (
 	"net/http"
 	"os"
 	"runtime/debug"
+	"strconv"
 	"sync/atomic"
 	"time"
-	
+
 	"github.com/gin-contrib/static"
 	"github.com/redis/go-redis/v9"
 	"github.com/zishang520/socket.io/v2/socket"
@@ -43,14 +44,14 @@ var (
 	)
 	forceStateSnapshot = flag.Duration(
 		"force-snapshot-interval",
-		time.Second*50,
+		time.Second*57,
 		"",
 	)
 	maxLogInterval  = flag.Duration("max-log-interval", time.Second*5, "")
 	maxLogBatchSize = flag.Int("max-log-batch", 200, "")
 	mercyRatio      = flag.Int64(
 		"mercy-ratio",
-		3,
+		2,
 		"how quickly we should forgive the bad guys",
 	)
 )
@@ -62,6 +63,23 @@ const (
 	MAX_LOGS_PER_DAY = 400_000_000
 	TOTAL_CHECKBOXES = 1_000_000
 )
+
+func initializeCustomBitset() []byte {
+    // Calculate the sizes
+    emptyFrontBytes := 2
+    fullBytes := 125000 - 3
+    emptyEndBytes := 1
+
+    // Create the byte slice
+    bitset := make([]byte, emptyFrontBytes+fullBytes+emptyEndBytes)
+
+    // Fill the middle part with 1s (0xFF is a byte with all bits set to 1)
+    for i := emptyFrontBytes; i < emptyFrontBytes+fullBytes; i++ {
+        bitset[i] = 0xFF
+    }
+
+    return bitset
+}
 
 func initRedis() {
 	log := slog.With("scope", "redis")
@@ -88,20 +106,64 @@ func initRedis() {
 	if err != nil {
 		log.Error("Unable to load scripts into secondary redis, %s", err)
 	}
+	// if err := primaryRedisClient.SetNX(
+	// 	background,
+	// 	"truncated_bitset",
+	// 	string(make([]byte, TOTAL_CHECKBOXES)),
+	// 	0,
+	// ).Err(); err != nil {
+	// 	log.Error("Unable to initialize bitset %s", err)
+	// }
 	if err := primaryRedisClient.SetNX(
 		background,
-		"truncated_bitset",
+		"sunset_bitset",
+		// string(initializeCustomBitset()),
 		string(make([]byte, TOTAL_CHECKBOXES)),
 		0,
 	).Err(); err != nil {
-		log.Error("Unable to initialize bitset %s", err)
+		log.Error("Unable to initialize sunset bitset %s", err)
+	}
+	if err := primaryRedisClient.SetNX(
+		background,
+		"sunset_count",
+		// "999976",
+		"0",
+		0,
+	).Err(); err != nil {
+		log.Error("Unable to initialize sunset count %s", err)
+	}
+	if err := primaryRedisClient.SetNX(
+		background,
+		"frozen_bitset",
+		string(make([]byte, TOTAL_CHECKBOXES)),
+		0,
+	).Err(); err != nil {
+		log.Error("Unable to initialize frozen bitset %s", err)
+	}
+	if err := primaryRedisClient.SetNX(
+		background,
+		"freeze_time_ms",
+		"22015",
+		0,
+	).Err(); err != nil {
+		log.Error("Unable to initialize freeze time %s", err)
+	}
+	if err := primaryRedisClient.SetNX(
+		background,
+		"frozen_count",
+		"0",
+		0,
+	).Err(); err != nil {
+		log.Error("Unable to initialize frozen count %s", err)
 	}
 }
 
 type stateSnapshot struct {
-	FullState string `json:"full_state"`
-	Count     int    `json:"count"`
-	Timestamp int    `json:"timestamp"`
+	FullState   string `json:"full_state"`
+	FrozenState string `json:"frozen_state"`
+	Count       int    `json:"count"`
+	FrozenCount int    `json:"frozen_count"`
+	Timestamp   int    `json:"timestamp"`
 }
 
 func JSON(v any) string {
@@ -114,11 +176,14 @@ func JSON(v any) string {
 }
 
 func getStateSnapshot() *stateSnapshot {
-	count, _ := secondaryRedisClient.Get(background, "count").Int()
+	count, _ := secondaryRedisClient.Get(background, "sunset_count").Int()
+	frozenCount, _ := secondaryRedisClient.Get(background, "frozen_count").Int()
 	return &stateSnapshot{
-		FullState: getFullState(),
-		Count:     count,
-		Timestamp: int(time.Now().UnixMilli()),
+		FullState:   getFullState(),
+		FrozenState: getFrozenState(),
+		Count:       count,
+		FrozenCount: frozenCount,
+		Timestamp:   int(time.Now().UnixMilli()),
 	}
 }
 
@@ -144,7 +209,7 @@ func logToggles(logs []*toggleLogEntry) {
 		}
 
 		entry := fmt.Sprintf(
-			"%s|%s|%d|%s|new",
+			"%s|%s|%d|%s|s",
 			now.Format(time.DateTime),
 			l.ip,
 			l.index,
@@ -241,7 +306,9 @@ var (
 		"reset the abuse pentaly after this time",
 	)
 )
+
 func groupIPv6(ip string) (string, bool) {
+
 	parsedIP := net.ParseIP(ip)
 	if parsedIP == nil || parsedIP.To4() != nil {
 		return ip, false // Return as-is if it's not a valid IPv6 address
@@ -265,35 +332,34 @@ func socketIP(s *socket.Socket) (string, bool) {
 	// Check Cloudflare-specific header first
 	log := slog.With("socketIP")
 	NOLEN_IP := s.Request().Request().Header.Get("NOLEN-IP")
-	
+
 	cfIP := s.Request().Request().Header.Get("CF-Connecting-IP")
-	
+
 	if NOLEN_IP != "" {
 		// check if it begins with "10."
 		if len(NOLEN_IP) < 3 || NOLEN_IP[:3] == "10." {
-			log.Info("SKIP NOLEN IP ITS PRIVATE");
+			log.Info("SKIP NOLEN IP ITS PRIVATE")
 		} else {
 			log.Info("Using NOLEN IP", "ip", NOLEN_IP)
-			return groupIPv6(NOLEN_IP);
+			return groupIPv6(NOLEN_IP)
 		}
 	}
 
-	
 	if cfIP != "" {
 		log.Info("Using Cloudflare IP", "ip", cfIP)
-		return groupIPv6(cfIP);
+		return groupIPv6(cfIP)
 	}
 	forwarded := s.Request().Request().Header.Get("X-Forwarded-For")
 	if forwarded != "" {
 		log.Info("Using forwarded IP", "ip", forwarded)
-		return groupIPv6(forwarded);
+		return groupIPv6(forwarded)
 
 	}
 
 	addr, _ := net.ResolveTCPAddr("tcp", s.Conn().RemoteAddress())
 	z := addr.IP.String()
 	log.Info("Using remote IP", "ip", z)
-	return groupIPv6(z);
+	return groupIPv6(z)
 }
 
 func resetAbuseCounters() {
@@ -327,7 +393,8 @@ func detectAbuse(ip string, isIPV6 bool) bool {
 		return v
 	})
 	if isIPV6 {
-		count.Add(1)
+		count.Add(10)
+		// count.Add(1)
 	} else {
 		count.Add(1)
 	}
@@ -338,6 +405,32 @@ func detectAbuse(ip string, isIPV6 bool) bool {
 	thousands := float64(count.Load()) / 1000
 	chance := math.Pow(0.5, thousands)
 	return chance < rand.Float64()
+}
+
+func dumpHashsetState(rdb *redis.Client, log *slog.Logger) {
+	result, err := rdb.HGetAll(context.Background(), "last_checked").Result()
+	if err != nil {
+		log.Error("Failed to get hashset state", "error", err)
+		return
+	}
+
+	state := make(map[string]int64)
+	for k, v := range result {
+		timestamp, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			log.Error("Failed to parse timestamp", "key", k, "value", v, "error", err)
+			continue
+		}
+		state[k] = timestamp
+	}
+
+	stateJSON, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		log.Error("Failed to marshal hashset state", "error", err)
+		return
+	}
+
+	log.Info("Current hashset state", "state", string(stateJSON))
 }
 
 func main() {
@@ -365,8 +458,10 @@ func main() {
 				client.Id(),
 				"ip",
 				ip,
+				"isIPV6",
+				isIPV6,
 			)
-			if (isIPV6) {
+			if isIPV6 {
 				// add socket to "ipv6" room
 				client.Join("ipv6")
 			}
@@ -395,16 +490,19 @@ func main() {
 				data := a[0].(map[string]any)
 				index := int(data["index"].(float64))
 				tlg := log.WithGroup("toggle_bit").With("index", index)
-				if (index >= TOTAL_CHECKBOXES || index < 0) {
+				if index >= TOTAL_CHECKBOXES || index < 0 {
 					log.Error("attmepted to toggle bad index")
 					return
 				}
-				res := newSetBitScript.Run(
+				res := frozenSetBitScript.Run(
 					background,
 					primaryRedisClient,
 					[]string{
-						"truncated_bitset",
-						"count",
+						"sunset_bitset",
+						"sunset_count",
+						"frozen_bitset",
+						"frozen_count",
+						"freeze_time_ms",
 					},
 					int(index),
 					TOTAL_CHECKBOXES,
@@ -415,7 +513,7 @@ func main() {
 				}
 				ts := time.Now().UnixMilli()
 				nv, _ := res.Int64Slice()
-				nbv, diff := nv[0], nv[1]
+				nbv, diff, newly_frozen := nv[0], nv[1], nv[2]
 				if diff != 0 {
 					tlg.Debug("toggled bit")
 
@@ -431,7 +529,16 @@ func main() {
 							index, int(nbv), ts,
 						}),
 					)
-
+				}
+				if newly_frozen == 1 {
+					tlg.Debug("frozen bit")
+					primaryRedisClient.Publish(
+						background,
+						"frozen_bit_channel",
+						JSON([]any{
+							index,
+						}),
+					)
 				}
 			}))
 			slog.Debug("New connection", "socket", a)
@@ -464,14 +571,14 @@ func main() {
 			log := slog.With("subscriber", subscriber)
 
 			messages := subscriber.Channel()
-			switches := make(map[int]bool, maxBatchSize)
+			changed := make(map[int]bool, maxBatchSize)
 			maxTs := 0
 			tmp := make([]int, 3)
 
 			emitAll := func() {
-				on := make([]int, 0, len(switches)/2)
-				off := make([]int, 0, len(switches)/2)
-				for k, v := range switches {
+				on := make([]int, 0, len(changed)/2)
+				off := make([]int, 0, len(changed)/2)
+				for k, v := range changed {
 					if v {
 						on = append(on, k)
 					} else {
@@ -481,6 +588,7 @@ func main() {
 				switches = make(map[int]bool, maxBatchSize)
 				ws.Except("nomessage").Emit("batched_bit_toggles", []any{on, off, maxTs})
 				log.Debug("emmitting", "on", on, "off", off)
+				changed = make(map[int]bool, maxBatchSize)
 				maxTs = 0
 			}
 			for {
@@ -488,13 +596,13 @@ func main() {
 				case msg := <-messages:
 					json.Unmarshal([]byte(msg.Payload), &tmp)
 					index, nbv, ts := tmp[0], tmp[1], tmp[2]
-					switches[index] = nbv > 0
+					changed[index] = nbv > 0
 					maxTs = max(ts, maxTs)
-					if len(switches) < maxBatchSize {
+					if len(changed) < maxBatchSize {
 						continue
 					}
 				case <-ticker.C:
-					if len(switches) == 0 {
+					if len(changed) == 0 {
 						continue
 					}
 				}
@@ -503,20 +611,60 @@ func main() {
 			}
 		})
 	}()
+
+	go func() {
+		tryForever(func() {
+			maxBatchSize := 400
+			ticker := time.NewTicker(time.Second / 7)
+			subscriber := secondaryRedisClient.Subscribe(
+				background,
+				"frozen_bit_channel",
+			)
+			defer subscriber.Close()
+			log := slog.With("subscriber", subscriber)
+
+			messages := subscriber.Channel()
+			frozen := make([]int, 0, maxBatchSize)
+			tmp := make([]int, 1)
+			emitAll := func() {
+				ws.Except().Emit("batched_frozen_bits", frozen)
+				log.Debug("emmitting", "frozen", frozen)
+				frozen = make([]int, 0, maxBatchSize)
+			}
+			for {
+				select {
+				case msg := <-messages:
+					json.Unmarshal([]byte(msg.Payload), &tmp)
+					index := tmp[0]
+					frozen = append(frozen, index)
+					if len(frozen) < maxBatchSize {
+						continue
+					}
+				case <-ticker.C:
+					if len(frozen) == 0 {
+						continue
+					}
+				}
+
+				catch(emitAll)
+			}
+		})
+	}()
+
 	wss := ws.ServeHandler(nil)
 	gin.WrapF(func(w http.ResponseWriter, r *http.Request) {
-		ip := "";
+		ip := ""
 		NOLEN_IP := r.Header.Get("NOLEN-IP")
 		cfIP := r.Header.Get("CF-Connecting-IP")
 		forwarded := r.Header.Get("X-Forwarded-For")
 		if NOLEN_IP != "" {
-			ip = NOLEN_IP;
+			ip = NOLEN_IP
 		} else if cfIP != "" {
-			ip = cfIP;
+			ip = cfIP
 		} else if forwarded != "" {
-			ip = forwarded;
+			ip = forwarded
 		} else {
-			ip = "10.0.0.1";
+			ip = "10.0.0.1"
 		}
 		parsedIp, isIPV6 := groupIPv6(ip)
 
@@ -563,6 +711,8 @@ func miniClient() *redis.Client {
 	client := redis.NewClient(&redis.Options{
 		Addr: mini.Addr(),
 	})
+	l := slog.With("scope", "miniredis")
+	l.Info("Using miniredis", "addr", mini.Addr(), "port", mini.Port())
 	if ping := client.Ping(background); ping.Err() != nil {
 		log.Fatalf("Unable to estable connection to miniredis %s", ping.Err())
 	}
@@ -588,12 +738,21 @@ func replicaRedis() (*redis.Client, error) {
 
 func getFullState() string {
 
-	buff, err := secondaryRedisClient.Get(background, "truncated_bitset").
+	buff, err := secondaryRedisClient.Get(background, "sunset_bitset").
 		Bytes()
 	if err != nil {
 		log.Panicf("Unable to read bitset from redis", err)
 	}
 	return base64.RawStdEncoding.EncodeToString(buff)
+}
+
+func getFrozenState() string {
+	buff, err := secondaryRedisClient.Get(background, "frozen_bitset").
+		Bytes()
+	if err != nil {
+		log.Panicf("Unable to read frozen bitset from redis", err)
+	}
+	return base64.StdEncoding.EncodeToString(buff)
 }
 
 func redisClient(host, port, user, pass string) (*redis.Client, error) {
@@ -653,4 +812,66 @@ local new_count = current_count + diff
 redis.call('set', count_key, new_count)
 
 return {new_bit, diff}  -- new bit value, and the change (1, 0, or -1)`)
+
+	frozenSetBitScript = redis.NewScript(`
+local bitset_key = KEYS[1]
+local count_key = KEYS[2]
+local frozen_bitset_key = KEYS[3]
+local frozen_count_key = KEYS[4]
+local freeze_time_key = KEYS[5]
+local index = tonumber(ARGV[1])
+local max_count = tonumber(ARGV[2])
+
+-- Sentinel value for unchecked boxes (0 is a good choice as it's falsy in Lua)
+local UNCHECKED_SENTINEL = 0
+
+-- Get current Redis time in milliseconds
+local redis_time = redis.call('TIME')
+local current_time = tonumber(redis_time[1]) * 1000 + math.floor(tonumber(redis_time[2]) / 1000)
+
+-- Get freeze_time from Redis (in milliseconds)
+local freeze_time = tonumber(redis.call('get', freeze_time_key) or "0")
+
+-- Get current state
+local current_count = tonumber(redis.call('get', count_key) or "0")
+local current_bit = redis.call('getbit', bitset_key, index)
+local frozen_bit = redis.call('getbit', frozen_bitset_key, index)
+
+-- Check if the box is already frozen
+if frozen_bit == 1 then
+    return {current_bit, 0, 0}  -- Return current bit value, 0 for no change, and 0 to indicate not newly frozen
+end
+
+-- If we're at max count, no changes allowed
+if current_count >= max_count then
+    return {current_bit, 0, 0}
+end
+
+-- Toggle the bit
+local new_bit = 1 - current_bit
+local diff = new_bit - current_bit
+
+-- If we're unchecking (new_bit == 0), check the freeze_time
+if new_bit == 0 then
+    local last_checked = tonumber(redis.call('hget', 'last_checked', index) or UNCHECKED_SENTINEL)
+    if last_checked ~= UNCHECKED_SENTINEL and current_time - last_checked >= freeze_time then
+        -- Box is frozen, update frozen bitset and count
+        redis.call('setbit', frozen_bitset_key, index, 1)
+        redis.call('incr', frozen_count_key)
+        return {1, 0, 1}  -- Return 1 (checked), 0 for no change, and 1 to indicate newly frozen
+    else
+        -- Set the sentinel value instead of deleting
+        redis.call('hset', 'last_checked', index, UNCHECKED_SENTINEL)
+    end
+else
+    -- We're checking the box, update last_checked time
+    redis.call('hset', 'last_checked', index, current_time)
+end
+
+-- Proceed with the change
+redis.call('setbit', bitset_key, index, new_bit)
+local new_count = current_count + diff
+redis.call('set', count_key, new_count)
+
+return {new_bit, diff, 0}  -- new bit value, the change (-1, 0, or 1), and 0 to indicate not frozen`)
 )

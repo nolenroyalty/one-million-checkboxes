@@ -22,8 +22,8 @@ echo $(md5sum $CHECKBOX_BIN)
 RSYNC_OPTS="-avz --delete"
 GO_SYS_UNIT="go-one-million.service"
 
-for REMOTE_HOST in bak.onemil 2bak.onemil 3bak.onemil 4bak.onemil 5bak.onemil 6bak.onemil 7bak.onemil 8bak.onemil
-#for REMOTE_HOST in onemil
+#for REMOTE_HOST in bak.onemil 2bak.onemil 3bak.onemil 4bak.onemil 5bak.onemil 6bak.onemil 7bak.onemil 8bak.onemil
+for REMOTE_HOST in onemil
 #for REMOTE_HOST in 2bak.onemil
 do
     echo $REMOTE_HOST
@@ -41,6 +41,9 @@ do
     rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$CHECKBOX_BIN" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
     ssh root@$REMOTE_HOST "systemctl start $GO_SYS_UNIT"
 
+    ### Sync freeze bit script
+    echo "syncing freeze_bits_and_compute_stats.py"
+    rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "freeze_bits_and_compute_stats.py" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
 
     ##Sync server.py
     #echo "Syncing server.py..."
