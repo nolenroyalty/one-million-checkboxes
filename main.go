@@ -143,7 +143,7 @@ func initRedis() {
 	if err := primaryRedisClient.SetNX(
 		background,
 		"freeze_time_ms",
-		"10015",
+		"22015",
 		0,
 	).Err(); err != nil {
 		log.Error("Unable to initialize freeze time %s", err)
