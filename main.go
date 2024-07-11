@@ -393,8 +393,8 @@ func detectAbuse(ip string, isIPV6 bool) bool {
 		return v
 	})
 	if isIPV6 {
-		// count.Add(50)
-		count.Add(1)
+		count.Add(10)
+		// count.Add(1)
 	} else {
 		count.Add(1)
 	}
