@@ -50,7 +50,7 @@ var (
 	maxLogBatchSize = flag.Int("max-log-batch", 200, "")
 	mercyRatio      = flag.Int64(
 		"mercy-ratio",
-		8,
+		3,
 		"how quickly we should forgive the bad guys",
 	)
 )
@@ -232,7 +232,7 @@ var (
 var (
 	maxAbuseRequests = flag.Int64(
 		"max-abuse-requests",
-		1000,
+		500,
 		"maximum nubmer of requests a client can make before we consider it abuse",
 	)
 	abuseResetInterval = flag.Duration(
@@ -335,7 +335,7 @@ func detectAbuse(ip string, isIPV6 bool) bool {
 		return false
 	}
 	// reducing this a bit to trim load a little more
-	thousands := float64(count.Load()) / 2500
+	thousands := float64(count.Load()) / 1000
 	chance := math.Pow(0.5, thousands)
 	return chance < rand.Float64()
 }
@@ -380,8 +380,10 @@ func main() {
 				return
 			}
 
-			client.On("unsibscribe", try(func(a ...any) {
-				client.Join("ipv6")
+			client.On("unsubscribe", try(func(a ...any) {
+				log.Info("client unsubbed")
+				client.Join("nomessage")
+				client.Emit("unsubscribed", "unsubscribed")
 			}))
 
 			client.On("toggle_bit", try(func(a ...any) {
@@ -444,7 +446,7 @@ func main() {
 			log := slog.With("scope", "forceStateSnapshot")
 			for range t.C {
 				log.Debug("starting snapshot send")
-				ws.Except("ipv6").Emit("full_state", getStateSnapshot())
+				ws.Except("ipv6").Except("nomessage").Emit("full_state", getStateSnapshot())
 				log.Debug("compete snapshot send")
 			}
 		})
@@ -477,7 +479,7 @@ func main() {
 					}
 				}
 				switches = make(map[int]bool, maxBatchSize)
-				ws.Except().Emit("batched_bit_toggles", []any{on, off, maxTs})
+				ws.Except("nomessage").Emit("batched_bit_toggles", []any{on, off, maxTs})
 				log.Debug("emmitting", "on", on, "off", off)
 				maxTs = 0
 			}
