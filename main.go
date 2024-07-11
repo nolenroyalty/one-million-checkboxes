@@ -380,6 +380,10 @@ func main() {
 				return
 			}
 
+			client.On("unsibscribe", try(func(a ...any) {
+				client.Join("ipv6")
+			}))
+
 			client.On("toggle_bit", try(func(a ...any) {
 				if detectAbuse(ip, isIPV6) {
 					client.Conn().Close(true)
