@@ -118,7 +118,7 @@ func initRedis() {
 		background,
 		"sunset_bitset",
 		// string(initializeCustomBitset()),
-		string(make([]byte, TOTAL_CHECKBOXES)),
+		string(make([]byte, TOTAL_CHECKBOXES / 8)),
 		0,
 	).Err(); err != nil {
 		log.Error("Unable to initialize sunset bitset %s", err)
@@ -135,7 +135,7 @@ func initRedis() {
 	if err := primaryRedisClient.SetNX(
 		background,
 		"frozen_bitset",
-		string(make([]byte, TOTAL_CHECKBOXES)),
+		string(make([]byte, TOTAL_CHECKBOXES / 8)),
 		0,
 	).Err(); err != nil {
 		log.Error("Unable to initialize frozen bitset %s", err)
@@ -144,6 +144,7 @@ func initRedis() {
 		background,
 		"freeze_time_ms",
 		"22015",
+		// "1000",
 		0,
 	).Err(); err != nil {
 		log.Error("Unable to initialize freeze time %s", err)
@@ -585,7 +586,6 @@ func main() {
 						off = append(off, k)
 					}
 				}
-				switches = make(map[int]bool, maxBatchSize)
 				ws.Except("nomessage").Emit("batched_bit_toggles", []any{on, off, maxTs})
 				log.Debug("emmitting", "on", on, "off", off)
 				changed = make(map[int]bool, maxBatchSize)
