@@ -322,7 +322,7 @@ func groupIPv6(ip string) (string, bool) {
 
 	// Keep the first 48 bits (6 bytes) and zero out the rest
 	// maybe 64?
-	for i := 8; i < 16; i++ {
+	for i := 6; i < 16; i++ {
 		ipv6Addr[i] = 0
 	}
 

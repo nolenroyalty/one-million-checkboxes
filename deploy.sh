@@ -37,13 +37,17 @@ do
     #ssh -i $SSH_KEY root@${REMOTE_HOST} -- chmod -R 755 ${WWW_DIR}
     #echo "syncing new server binary..."
 
-    ssh root@$REMOTE_HOST "systemctl stop $GO_SYS_UNIT"
-    rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$CHECKBOX_BIN" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
-    ssh root@$REMOTE_HOST "systemctl start $GO_SYS_UNIT"
+    #ssh root@$REMOTE_HOST "systemctl stop $GO_SYS_UNIT"
+    #rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "$CHECKBOX_BIN" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
+    #ssh root@$REMOTE_HOST "systemctl start $GO_SYS_UNIT"
 
     ### Sync freeze bit script
     echo "syncing freeze_bits_and_compute_stats.py"
     rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "freeze_bits_and_compute_stats.py" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
+
+    ### Sync compute-stats script
+    echo "syncing compute_stats.sh"
+    rsync $RSYNC_OPTS -e "ssh -i $SSH_KEY" "compute-stats.sh" "root@$REMOTE_HOST:/root/"
 
     ##Sync server.py
     #echo "Syncing server.py..."
