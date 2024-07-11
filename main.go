@@ -298,7 +298,7 @@ var (
 var (
 	maxAbuseRequests = flag.Int64(
 		"max-abuse-requests",
-		500,
+		400,
 		"maximum nubmer of requests a client can make before we consider it abuse",
 	)
 	abuseResetInterval = flag.Duration(
@@ -394,8 +394,7 @@ func detectAbuse(ip string, isIPV6 bool) bool {
 		return v
 	})
 	if isIPV6 {
-		count.Add(10)
-		// count.Add(1)
+		count.Add(1) // at some point I added 10 instead here
 	} else {
 		count.Add(1)
 	}
@@ -403,9 +402,9 @@ func detectAbuse(ip string, isIPV6 bool) bool {
 		return false
 	}
 	// reducing this a bit to trim load a little more
-	thousands := float64(count.Load()) / 1000
+	thousands := float64(count.Load()) / 700
 	chance := math.Pow(0.5, thousands)
-	return chance < rand.Float64()
+	return chance > rand.Float64()
 }
 
 func dumpHashsetState(rdb *redis.Client, log *slog.Logger) {
