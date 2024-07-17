@@ -3,7 +3,6 @@ import { FixedSizeGrid as Grid } from "react-window";
 import { useWindowSize } from "react-use";
 import styled, { keyframes } from "styled-components";
 import BitSet from "../../bitset";
-import io from "socket.io-client";
 import INDICES from "../../randomizedColors";
 import { abbrNum } from "../../utils";
 import useClickTracker from "../../hooks/use-click-tracker";
@@ -183,12 +182,10 @@ const App = () => {
   const forceUpdate = useForceUpdate({ bitSetRef, setCheckCount });
   const [isLoading, setIsLoading] = useState(true);
   const recentlyCheckedClientSide = useRef({});
-  const socketRef = useRef();
   const [clickCounts, trackClick] = useClickTracker();
   const [disabled, setDisabled] = useState(false);
   const [allChecked, setAllChecked] = useState(false);
   const clickTimeout = React.useRef();
-  const lastUpdateTimestamp = useRef(0);
   const [singlePlayerMode, setSinglePlayerMode] = useState(false);
   const doAlert = React.useCallback((s) => {
     window.alert(s);
@@ -220,131 +217,22 @@ const App = () => {
   useEffect(() => {
     const fetchInitialState = async () => {
       try {
-        const response = await fetch("/api/initial-state");
-        const data = await response.json();
-        const bitset = new BitSet({
-          base64String: data.full_state,
-          count: data.count,
-        });
-        const frozenBitset = new BitSet({
-          base64String: data.frozen_state,
-          count: data.frozen_count,
-        });
-        if (data.count >= 1000000) {
-          setDisabled(true);
-          setAllChecked(true);
-        }
-        setCheckCount(data.count);
+        const bitset = BitSet.makeFull();
+        const frozenBitset = BitSet.makeFull();
+        setDisabled(true);
+        setAllChecked(true);
         bitSetRef.current = bitset;
         frozenBitsetRef.current = frozenBitset;
+        forceUpdate();
         setIsLoading(false);
       } catch (error) {
-        console.error("Failed to fetch initial state:", error);
+        console.error("Failed to create initial state:", error);
         setIsLoading(false);
       }
     };
 
     fetchInitialState();
-  }, []);
-
-  useEffect(() => {
-    if (singlePlayerMode) {
-      socketRef.current?.close();
-      return;
-    }
-    const socket = io.connect();
-    socketRef.current = socket;
-
-    // Listen for bit toggle events
-    // No longer used
-    // socket.on("bit_toggled", (data) => {
-    //   console.log(`Received bit toggle event: ${JSON.stringify(data)}`);
-    //   bitSetRef.current?.set(data.index, data.value);
-    //   forceUpdate();
-    // });
-
-    socket.on("batched_bit_toggles", (updates) => {
-      const trueUpdates = updates[0];
-      const falseUpdates = updates[1];
-      if (updates.length !== 3) {
-        console.log(`SKIP: ${updates}`);
-      } else {
-        const timestamp = updates[2];
-        if (timestamp < lastUpdateTimestamp.current) {
-          console.log("SKIP OLD UPDATE");
-        } else {
-          console.log(
-            `Received batch: ${trueUpdates.length} true / ${falseUpdates.length} false`
-          );
-          trueUpdates.forEach((index) => {
-            bitSetRef.current?.set(index, true);
-          });
-          falseUpdates.forEach((index) => {
-            bitSetRef.current?.set(index, false);
-          });
-          const count = bitSetRef.current.count();
-          if (count >= 1000000) {
-            setDisabled(true);
-            setAllChecked(true);
-          }
-          forceUpdate();
-        }
-      }
-    });
-
-    socket.on("batched_frozen_bits", (frozen) => {
-      console.log(`Received frozen batch: ${frozen.length}`);
-      frozen.forEach((index) => {
-        frozenBitsetRef.current?.set(index, true);
-        bitSetRef.current?.set(index, true);
-      });
-      forceUpdate();
-    });
-
-    // Listen for full state updates
-    socket.on("full_state", (data) => {
-      console.debug(`Received full state update`);
-      if (data.timestamp > lastUpdateTimestamp.current) {
-        lastUpdateTimestamp.current = data.timestamp;
-        const newBitset = new BitSet({
-          base64String: data.full_state,
-          count: data.count,
-        });
-        const newFrozenBitset = new BitSet({
-          base64String: data.frozen_state,
-          count: data.frozen_count,
-        });
-        if (data.count >= 1000000) {
-          setDisabled(true);
-          setAllChecked(true);
-          clearTimeout(clickTimeout.current);
-        } else {
-          if (!clickTimeout.current) {
-            setDisabled(false);
-          }
-          setAllChecked(false);
-        }
-        const recentlyChecked = { ...recentlyCheckedClientSide.current };
-        Object.entries(recentlyChecked).forEach(
-          ([index, { value, timeout }]) => {
-            // skip if in new frozen bitset
-            if (newFrozenBitset.get(index)) {
-            } else {
-              newBitset.set(index, value);
-            }
-          }
-        );
-        bitSetRef.current = newBitset;
-        frozenBitsetRef.current = newFrozenBitset;
-        forceUpdate();
-      }
-    });
-
-    // Clean up the socket connection when the component unmounts
-    return () => {
-      socket.disconnect();
-    };
-  }, [forceUpdate, singlePlayerMode]);
+  }, [forceUpdate]);
 
   const toggleBit = useCallback(
     async (index) => {
@@ -388,7 +276,7 @@ const App = () => {
               JSON.stringify(bitSetRef.current)
             );
           } else {
-            socketRef.current?.emit("toggle_bit", { index });
+            // socketRef.current?.emit("toggle_bit", { index });
           }
         } catch (error) {
           console.error("Failed to toggle bit:", error);
@@ -466,8 +354,6 @@ const App = () => {
       console.log("enabling single player");
       e.preventDefault();
       setSinglePlayerMode(true);
-      socketRef.current?.close();
-      console.log("closed socket");
       const localJson = localStorage.getItem("localBitset");
       setDisabled(false);
 

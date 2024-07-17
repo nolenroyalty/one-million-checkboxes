@@ -49,6 +49,14 @@ class BitSet {
     });
   }
 
+  static makeFull() {
+    const bytes = new Uint8Array(125000).fill(255);
+    return new BitSet({
+      base64String: BitSet._makeBase64String(bytes),
+      count: 1000000,
+    });
+  }
+
   static _makeBase64String(bytes) {
     let binary = "";
     // const bytes = new Uint8Array(this.bytes.buffer);
